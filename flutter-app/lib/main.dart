@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'screens/login_screen.dart';
 import 'screens/post_list_screen.dart';
-import 'screens/settings_screen.dart';
 import 'services/api_service.dart';
 
 void main() async {
@@ -42,14 +42,14 @@ class _SplashRouterState extends State<_SplashRouter> {
   }
 
   Future<void> _route() async {
-    final cfg = await ApiService.loadConfig();
+    final loggedIn = await ApiService.isLoggedIn();
     if (!mounted) return;
-    if (cfg['apiBase']?.isNotEmpty == true && cfg['memberId']?.isNotEmpty == true) {
+    if (loggedIn) {
       Navigator.pushReplacement(
           context, MaterialPageRoute(builder: (_) => const PostListScreen()));
     } else {
       Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+          context, MaterialPageRoute(builder: (_) => const LoginScreen()));
     }
   }
 

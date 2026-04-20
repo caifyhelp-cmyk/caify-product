@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/api_service.dart';
+import 'login_screen.dart';
 import 'publish_screen.dart';
-import 'settings_screen.dart';
 
 class PostListScreen extends StatefulWidget {
   const PostListScreen({super.key});
@@ -89,6 +89,32 @@ class _PostListScreenState extends State<PostListScreen>
     return result == true;
   }
 
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('로그아웃'),
+        content: const Text('로그아웃 하시겠습니까?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('로그아웃',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await ApiService.logout();
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    }
+  }
+
   /// 수동 발행 (버튼 탭 시)
   Future<void> _publishManual(Post post) async {
     final success = await Navigator.push<bool>(
@@ -125,12 +151,9 @@ class _PostListScreenState extends State<PostListScreen>
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
           IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () async {
-              await Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()));
-              _load();
-            },
+            icon: const Icon(Icons.logout),
+            tooltip: '로그아웃',
+            onPressed: _logout,
           ),
         ],
         bottom: TabBar(

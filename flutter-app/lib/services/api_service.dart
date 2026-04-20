@@ -4,29 +4,81 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
 
 class ApiService {
-  static const _keyBase     = 'apiBase';
-  static const _keyMemberId = 'memberId';
-  static const _keyToken    = 'apiToken';
+  static const _keyBase       = 'apiBase';
+  static const _keyMemberId   = 'memberId';
+  static const _keyToken      = 'apiToken';
+  static const _keyMemberName = 'memberName';
+
+  // 실서버 기본 주소 — 설정 미저장 시 fallback
+  static const defaultApiBase = 'https://caify.ai';
 
   // ── 설정 저장/로드 ───────────────────────────────────────────
   static Future<void> saveConfig({
     required String apiBase,
     required String memberId,
     String token = '',
+    String memberName = '',
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyBase, apiBase.replaceAll(RegExp(r'/$'), ''));
     await prefs.setString(_keyMemberId, memberId);
     await prefs.setString(_keyToken, token);
+    await prefs.setString(_keyMemberName, memberName);
   }
 
   static Future<Map<String, String>> loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     return {
-      'apiBase':  prefs.getString(_keyBase)     ?? '',
-      'memberId': prefs.getString(_keyMemberId) ?? '',
-      'apiToken': prefs.getString(_keyToken)    ?? '',
+      'apiBase':    prefs.getString(_keyBase)       ?? '',
+      'memberId':   prefs.getString(_keyMemberId)   ?? '',
+      'apiToken':   prefs.getString(_keyToken)      ?? '',
+      'memberName': prefs.getString(_keyMemberName) ?? '',
     };
+  }
+
+  static Future<bool> isLoggedIn() async {
+    final cfg = await loadConfig();
+    return cfg['apiToken']!.isNotEmpty && cfg['memberId']!.isNotEmpty;
+  }
+
+  static Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyToken);
+    await prefs.remove(_keyMemberId);
+    await prefs.remove(_keyMemberName);
+  }
+
+  // ── 로그인 ───────────────────────────────────────────────────
+  /// 성공: {'ok': true, 'member_pk': ..., 'api_token': ..., 'company_name': ...}
+  /// 실패: {'ok': false, 'error': '...'}
+  static Future<Map<String, dynamic>> login({
+    required String memberId,
+    required String password,
+    String? apiBase,
+  }) async {
+    final base = (apiBase?.isNotEmpty == true ? apiBase! : defaultApiBase)
+        .replaceAll(RegExp(r'/$'), '');
+    try {
+      final res = await http.post(
+        Uri.parse('$base/member/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'member_id': memberId, 'passwd': password}),
+      ).timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode == 200 && data['ok'] == true) {
+        await saveConfig(
+          apiBase:    base,
+          memberId:   data['member_pk'].toString(),
+          token:      data['api_token'] ?? '',
+          memberName: data['company_name'] ?? memberId,
+        );
+        return {'ok': true, ...data};
+      }
+      return {'ok': false, 'error': data['error'] ?? '로그인 실패'};
+    } catch (e) {
+      return {'ok': false, 'error': '서버 연결 실패: $e'};
+    }
   }
 
   // ── 공통 헤더 ────────────────────────────────────────────────
