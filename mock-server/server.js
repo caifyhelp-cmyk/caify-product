@@ -79,6 +79,7 @@ let posts = [
     intro: '임플란트가 고민이신 분들을 위한 핵심 정보',
     html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p>',
     naver_html: '<div class="se-main-container"><h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>🦷 테스트 발행 콘텐츠입니다.</p></div>',
+    tags: ['임플란트', '강남치과', '임플란트비용'],
     status: 1,          // 1=승인완료
     posting_date: null, // null=아직 미발행
     created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3일 전

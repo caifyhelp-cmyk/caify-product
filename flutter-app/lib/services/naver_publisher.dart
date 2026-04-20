@@ -66,54 +66,58 @@ class NaverPublisher {
     ''';
   }
 
-  // ── 발행 버튼 클릭 ───────────────────────────────────────────
-  /// 에디터 상단 우측 '발행' 버튼 클릭
-  /// 반환값: 'ok' | 'no_publish_btn|<button_list>'
-  static String jsClickPublish() => r'''
+  // ── 태그 입력 ────────────────────────────────────────────────
+  /// 태그 목록을 에디터 태그 입력창에 삽입
+  /// 반환값: 'ok' | 'no_tag_input'
+  static String jsAddTags(List<String> tags) {
+    if (tags.isEmpty) return '"ok"';
+    final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
+    return '''
+      (function() {
+        const iframe = document.querySelector("iframe[name='mainFrame']");
+        if (!iframe || !iframe.contentDocument) return 'no_iframe';
+        const doc = iframe.contentDocument;
+        const tagInput =
+          doc.querySelector('input.se-tag-input') ||
+          doc.querySelector('input[placeholder*="태그"]') ||
+          doc.querySelector('[class*="tag"] input') ||
+          doc.querySelector('.se-tag-field input');
+        if (!tagInput) return 'no_tag_input';
+        const tagList = [$tagsJson];
+        tagInput.focus();
+        for (const tag of tagList) {
+          tagInput.value = tag;
+          tagInput.dispatchEvent(new Event('input', { bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keyup',  { key: 'Enter', keyCode: 13, bubbles: true }));
+        }
+        return 'ok';
+      })()
+    ''';
+  }
+
+  // ── 임시저장 버튼 클릭 ───────────────────────────────────────
+  /// 에디터 상단 '임시저장' 버튼 클릭 후 멈춤 (발행은 고객이 직접)
+  /// 반환값: 'ok' | 'no_save_btn|<button_list>'
+  static String jsClickTempSave() => r'''
     (function() {
       const iframe = document.querySelector("iframe[name='mainFrame']");
       if (!iframe || !iframe.contentDocument) return 'no_iframe';
       const doc = iframe.contentDocument;
       const btn =
-        doc.querySelector('button.publish_btn__m9KHr') ||
-        doc.querySelector('button[data-click-area="tpb.publish"]') ||
-        doc.querySelector('button[class*="publish_btn"]') ||
+        doc.querySelector('button[class*="temp_save"]') ||
+        doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
+        doc.querySelector('button[class*="tempSave"]') ||
         Array.from(doc.querySelectorAll('button')).find(b =>
-          (b.innerText || '').trim() === '발행'
+          (b.innerText || '').trim() === '임시저장'
         );
       if (!btn) {
         const all = Array.from(doc.querySelectorAll('button'))
           .map(b => (b.innerText||'').trim().substring(0,15))
           .join(',');
-        return 'no_publish_btn|' + all;
+        return 'no_save_btn|' + all;
       }
       btn.click();
-      return 'ok';
-    })()
-  ''';
-
-  // ── 발행 확인 패널 클릭 ──────────────────────────────────────
-  /// '발행' 클릭 후 뜨는 설정 패널의 최종 확인 버튼 클릭
-  /// 반환값: 'ok' | 'not_found' (패널 없이 바로 발행된 경우 정상)
-  static String jsConfirmPublish() => r'''
-    (function() {
-      const iframe = document.querySelector("iframe[name='mainFrame']");
-      if (!iframe || !iframe.contentDocument) return 'no_iframe';
-      const doc = iframe.contentDocument;
-      const confirmBtn =
-        doc.querySelector('.se-publish-layer button[class*="confirm"]') ||
-        doc.querySelector('[class*="LayerPublish"] button[class*="confirm"]') ||
-        doc.querySelector('[class*="publish_layer"] button[class*="ok"]') ||
-        doc.querySelector('[class*="publisharea"] button[class*="publish"]') ||
-        Array.from(doc.querySelectorAll('button')).find(b => {
-          final t = (b.innerText || '').trim();
-          final cls = b.className || '';
-          return (t === '발행' || t === '확인') &&
-                 (cls.includes('confirm') || cls.includes('ok') ||
-                  cls.includes('submit') || cls.includes('publish'));
-        });
-      if (!confirmBtn) return 'not_found';
-      confirmBtn.click();
       return 'ok';
     })()
   ''';

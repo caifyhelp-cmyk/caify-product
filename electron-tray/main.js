@@ -155,19 +155,13 @@ async function publishPost(post) {
       await win.loadURL('https://blog.naver.com/GoBlogWrite.naver');
     }
 
-    await injectAndPublish(win, post);
+    await injectAndTempSave(win, post);
 
-    const cfg = store.get('config');
-    await fetch(`${cfg.apiBase}/api/posts/${post.id}/published`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cfg.apiToken || ''}`,
-        'Content-Type': 'application/json'
-      }
-    }).catch(() => {});
+    showNotif('Caify', `에디터 준비 완료: ${post.title}\n확인 후 발행 버튼을 눌러주세요.`);
+    console.log('[editor] 준비 완료:', post.title);
 
-    showNotif('Caify ✅', `발행 완료: ${post.title}`);
-    console.log('[publish] 완료:', post.title);
+    // 에디터 창을 닫을 때까지 대기 (고객이 발행 후 직접 닫음)
+    await new Promise(resolve => win.once('closed', resolve));
 
   } catch (e) {
     console.error('[publish] 실패:', e.message);
@@ -186,7 +180,7 @@ async function publishPost(post) {
   } finally {
     isPublishing = false;
     setTrayStatus('대기 중');
-    win.destroy();
+    if (!win.isDestroyed()) win.destroy();
   }
 }
 
@@ -258,71 +252,55 @@ async function injectBody(win, html) {
   if (result !== 'ok') throw new Error('본문 입력 실패: ' + result);
 }
 
-async function clickPublish(win) {
-  // 1단계: 발행 버튼 클릭 (에디터 상단 우측)
-  const step1 = await jsExec(win, `
+async function addTags(win, tags) {
+  if (!tags || tags.length === 0) return;
+  const tagsJson = JSON.stringify(tags);
+  await jsExec(win, `
+    (function() {
+      const iframe = document.querySelector("iframe[name='mainFrame']");
+      if (!iframe || !iframe.contentDocument) return 'no_iframe';
+      const doc = iframe.contentDocument;
+      const tagInput =
+        doc.querySelector('input.se-tag-input') ||
+        doc.querySelector('input[placeholder*="태그"]') ||
+        doc.querySelector('[class*="tag"] input') ||
+        doc.querySelector('.se-tag-field input');
+      if (!tagInput) return 'no_tag_input';
+      const tagList = ${tagsJson};
+      tagInput.focus();
+      for (const tag of tagList) {
+        tagInput.value = tag;
+        tagInput.dispatchEvent(new Event('input', { bubbles: true }));
+        tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+        tagInput.dispatchEvent(new KeyboardEvent('keyup',  { key: 'Enter', keyCode: 13, bubbles: true }));
+      }
+      return 'ok';
+    })()`);
+}
+
+async function clickTempSave(win) {
+  const result = await jsExec(win, `
     (function() {
       const iframe = document.querySelector("iframe[name='mainFrame']");
       if (!iframe || !iframe.contentDocument) return 'no_iframe';
       const doc = iframe.contentDocument;
       const btn =
-        doc.querySelector('button.publish_btn__m9KHr') ||
-        doc.querySelector('button[data-click-area="tpb.publish"]') ||
-        doc.querySelector('button[class*="publish_btn"]') ||
+        doc.querySelector('button[class*="temp_save"]') ||
+        doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
+        doc.querySelector('button[class*="tempSave"]') ||
         Array.from(doc.querySelectorAll('button')).find(b =>
-          (b.innerText || '').trim() === '발행'
+          (b.innerText || '').trim() === '임시저장'
         );
-      if (!btn) {
-        const all = Array.from(doc.querySelectorAll('button'))
-          .map(b => (b.innerText||'').trim().substring(0,15) + ':' + b.className.substring(0,30))
-          .join(' | ');
-        return 'no_publish_btn | ' + all;
-      }
+      if (!btn) return 'no_save_btn';
       btn.click();
       return 'ok';
     })()`);
-
-  console.log('[publish_btn]', step1);
-  if (!step1.startsWith('ok')) throw new Error('발행 버튼 없음: ' + step1);
-
-  // 2단계: 발행 확인 패널이 뜨면 확인 버튼 클릭 (최대 5초 대기)
-  for (let i = 0; i < 5; i++) {
-    await sleep(1000);
-    const step2 = await jsExec(win, `
-      (function() {
-        const iframe = document.querySelector("iframe[name='mainFrame']");
-        if (!iframe || !iframe.contentDocument) return 'no_iframe';
-        const doc = iframe.contentDocument;
-        // 발행 패널 안의 확인/발행 버튼
-        const confirmBtn =
-          doc.querySelector('.se-publish-layer button[class*="confirm"]') ||
-          doc.querySelector('.publisharea button[class*="publish"]') ||
-          doc.querySelector('[class*="LayerPublish"] button[class*="confirm"]') ||
-          doc.querySelector('[class*="publish_layer"] button[class*="ok"]') ||
-          // 버튼 텍스트로 찾기
-          Array.from(doc.querySelectorAll('button')).find(b => {
-            const t = (b.innerText || '').trim();
-            const cls = b.className || '';
-            return (t === '발행' || t === '확인') &&
-                   (cls.includes('confirm') || cls.includes('ok') || cls.includes('submit') || cls.includes('publish'));
-          });
-        if (confirmBtn) { confirmBtn.click(); return 'ok'; }
-        return 'not_found';
-      })()`);
-
-    if (step2 === 'ok') {
-      console.log('[confirm_btn] ok');
-      break;
-    }
-    // 패널 없이 바로 발행되는 경우도 있음 — 그냥 진행
-  }
-
-  // 발행 완료 대기
-  await sleep(3000);
+  console.log('[temp_save]', result);
 }
 
 // ── 전체 발행 파이프라인 ──────────────────────────────────────
-async function injectAndPublish(win, post) {
+// 제목 + 본문 + 태그 주입 후 임시저장까지만 — 발행은 고객이 직접
+async function injectAndTempSave(win, post) {
   await waitForEditor(win);
   await sleep(500);
 
@@ -330,9 +308,19 @@ async function injectAndPublish(win, post) {
   await sleep(500);
 
   await injectBody(win, post.html || post.naver_html || '');
-  await sleep(2000);  // SE3 HTML 파싱 대기
+  await sleep(2000);  // SE3 이미지 업로드 대기
 
-  await clickPublish(win);
+  if (post.tags && post.tags.length > 0) {
+    await addTags(win, post.tags);
+    await sleep(500);
+  }
+
+  await clickTempSave(win);
+  await sleep(1000);
+
+  // 에디터를 사용자에게 노출 — 발행 버튼은 직접 클릭
+  win.show();
+  setTrayStatus('에디터 확인 중');
 }
 
 // ── 알림 ─────────────────────────────────────────────────────
