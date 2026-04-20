@@ -1,0 +1,16 @@
+{
+  "name": "caify_test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test_n8n_api.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}

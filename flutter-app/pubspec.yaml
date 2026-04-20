@@ -1,0 +1,24 @@
+name: caify_flutter
+description: Caify 블로그 자동화 앱
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_inappwebview: ^6.0.0    # WebView + JS 주입 (Naver 에디터 자동화)
+  http: ^1.2.0                    # REST API 호출
+  shared_preferences: ^2.2.0      # 로컬 설정 저장
+  flutter_local_notifications: ^17.0.0  # 로컬 푸시 알림
+  cupertino_icons: ^1.0.8              # iOS 스타일 아이콘
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

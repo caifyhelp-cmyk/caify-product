@@ -1,0 +1,26 @@
+{
+  "name": "caify-tray",
+  "version": "1.0.0",
+  "description": "Caify 블로그 발행 도우미",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "ai.caify.tray",
+    "productName": "Caify 발행 도우미",
+    "directories": { "output": "dist" },
+    "win": {
+      "target": "portable",
+      "icon": "icon.ico"
+    }
+  }
+}

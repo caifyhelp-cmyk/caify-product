@@ -1,0 +1,29 @@
+# Node
+node_modules/
+dist/
+*.log
+
+# Flutter
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+
+# Android
+*.gradle
+.gradle/
+local.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# Secrets
+.env
+.env.local
+*.env
+provision_*.json
+
+# OS
+.DS_Store
+Thumbs.db
