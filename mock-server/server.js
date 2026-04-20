@@ -423,6 +423,80 @@ app.get('/api/post_meta', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// GET /api/posts/:id  — 단일 포스트 조회 (brain-agent 검토 UI용)
+// ════════════════════════════════════════════════════════════════
+app.get('/api/posts/:id', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const postId = parseInt(req.params.id, 10);
+  const post = posts.find(p => p.id === postId);
+  if (!post) return res.status(404).json({ ok: false, error: '포스트를 찾을 수 없습니다.' });
+
+  if (!isAdmin(member) && post.customer_id !== member.id) {
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+  }
+
+  res.json({
+    id: post.id,
+    customer_id: post.customer_id,
+    title: post.title,
+    subject: post.subject,
+    intro: post.intro,
+    html: post.html,
+    naver_html: post.naver_html,
+    status: post.status,
+    posting_date: post.posting_date,
+    created_at: post.created_at,
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// PATCH /api/posts/:id  — 포스트 내용 수정 (brain-agent 대화형 수정 후 저장)
+// Body: { title?, html? }
+// ════════════════════════════════════════════════════════════════
+app.patch('/api/posts/:id', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member || !isAdmin(member)) {
+    return res.status(403).json({ ok: false, error: '관리자 권한이 필요합니다.' });
+  }
+
+  const postId = parseInt(req.params.id, 10);
+  const post = posts.find(p => p.id === postId);
+  if (!post) return res.status(404).json({ ok: false, error: '포스트를 찾을 수 없습니다.' });
+
+  if (req.body.title !== undefined) post.title = req.body.title;
+  if (req.body.html !== undefined) {
+    post.html = req.body.html;
+    post.naver_html = req.body.html; // brain-agent 수정분은 naver_html에도 반영
+  }
+
+  console.log(`  [updated] id=${postId} title="${post.title}"`);
+  res.json({ ok: true, message: '수정 완료' });
+});
+
+// ════════════════════════════════════════════════════════════════
+// POST /api/posts/:id/reject  — 포스트 반려 (status 0으로 되돌리기)
+// brain-agent 검토 UI에서 반려 시 사용
+// ════════════════════════════════════════════════════════════════
+app.post('/api/posts/:id/reject', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member || !isAdmin(member)) {
+    return res.status(403).json({ ok: false, error: '관리자 권한이 필요합니다.' });
+  }
+
+  const postId = parseInt(req.params.id, 10);
+  const post = posts.find(p => p.id === postId);
+  if (!post) return res.status(404).json({ ok: false, error: '포스트를 찾을 수 없습니다.' });
+
+  const reason = req.body.reason || '';
+  post.status = 0;
+  console.log(`  [rejected] id=${postId} reason="${reason}"`);
+
+  res.json({ ok: true, message: '반려 완료' });
+});
+
+// ════════════════════════════════════════════════════════════════
 // 관리자 전용 API
 // GET  /admin/posts                    → 전체 포스트 목록
 // POST /admin/posts/:id/approve        → 포스트 승인 (status 0→1)
@@ -478,6 +552,9 @@ app.get('/', (req, res) => {
       'POST /api/posts/:id/published',
       'POST /api/posts/:id/failed',
       'GET  /api/post_meta?id=X',
+      'GET  /api/posts/:id',
+      'PATCH /api/posts/:id',
+      'POST /api/posts/:id/reject',
       'GET  /admin/posts',
       'POST /admin/posts/:id/approve',
     ],
