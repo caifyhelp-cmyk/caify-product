@@ -1,0 +1,273 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:open_file/open_file.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'api_service.dart';
+
+class UpdateService {
+  /// 앱 시작 시 호출. 새 버전이 있으면 업데이트 다이얼로그 표시.
+  static Future<void> checkAndPrompt(BuildContext context) async {
+    try {
+      final info = await _fetchVersionInfo();
+      if (info == null) return;
+
+      final pkg = await PackageInfo.fromPlatform();
+      if (!_isNewer(info['version'], pkg.version)) return;
+
+      if (!context.mounted) return;
+      _showDialog(context, info);
+    } catch (_) {
+      // 업데이트 체크 실패는 조용히 무시 (서비스 영향 없음)
+    }
+  }
+
+  // ── 버전 정보 fetch ─────────────────────────────────────────
+  static Future<Map<String, dynamic>?> _fetchVersionInfo() async {
+    final cfg = await ApiService.loadConfig();
+    final base = cfg['apiBase']?.isNotEmpty == true
+        ? cfg['apiBase']!
+        : ApiService.defaultApiBase;
+
+    final res = await http
+        .get(Uri.parse('$base/api/version'))
+        .timeout(const Duration(seconds: 6));
+
+    if (res.statusCode != 200) return null;
+
+    final body = res.body.trim();
+    // JSON 응답 파싱
+    if (body.startsWith('{')) {
+      final Map<String, dynamic> data = {};
+      // 간단 파싱 (dart:convert import 없이)
+      final vMatch = RegExp(r'"version"\s*:\s*"([^"]+)"').firstMatch(body);
+      final uMatch = RegExp(r'"apk_url"\s*:\s*"([^"]+)"').firstMatch(body);
+      final nMatch = RegExp(r'"notes"\s*:\s*"([^"]*)"').firstMatch(body);
+      if (vMatch == null || uMatch == null) return null;
+      data['version'] = vMatch.group(1)!;
+      data['apk_url'] = uMatch.group(1)!;
+      data['notes']   = nMatch?.group(1) ?? '';
+      return data;
+    }
+    return null;
+  }
+
+  // ── 버전 비교 (semantic: major.minor.patch) ─────────────────
+  static bool _isNewer(String remote, String current) {
+    try {
+      final r = remote.split('.').map(int.parse).toList();
+      final c = current.split('.').map(int.parse).toList();
+      for (int i = 0; i < 3; i++) {
+        final ri = i < r.length ? r[i] : 0;
+        final ci = i < c.length ? c[i] : 0;
+        if (ri > ci) return true;
+        if (ri < ci) return false;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── 업데이트 다이얼로그 ─────────────────────────────────────
+  static void _showDialog(BuildContext context, Map<String, dynamic> info) {
+    final notes = info['notes'] as String? ?? '';
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _UpdateDialog(
+        newVersion: info['version'] as String,
+        apkUrl:     info['apk_url'] as String,
+        notes:      notes,
+      ),
+    );
+  }
+}
+
+class _UpdateDialog extends StatefulWidget {
+  final String newVersion;
+  final String apkUrl;
+  final String notes;
+
+  const _UpdateDialog({
+    required this.newVersion,
+    required this.apkUrl,
+    required this.notes,
+  });
+
+  @override
+  State<_UpdateDialog> createState() => _UpdateDialogState();
+}
+
+class _UpdateDialogState extends State<_UpdateDialog> {
+  _Phase _phase = _Phase.idle;
+  double _progress = 0;
+  String _errorMsg = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _phase == _Phase.idle || _phase == _Phase.done || _phase == _Phase.error,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(
+          children: [
+            const Icon(Icons.system_update, color: Color(0xFF03C75A)),
+            const SizedBox(width: 10),
+            Text('업데이트 v${widget.newVersion}',
+                style: const TextStyle(fontSize: 17)),
+          ],
+        ),
+        content: _buildContent(),
+        actions: _buildActions(),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    switch (_phase) {
+      case _Phase.idle:
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('새 버전이 있습니다.\n지금 업데이트 하시겠습니까?'),
+            if (widget.notes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(widget.notes,
+                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
+              ),
+            ],
+          ],
+        );
+
+      case _Phase.downloading:
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LinearProgressIndicator(
+              value: _progress,
+              backgroundColor: const Color(0xFFE0E0E0),
+              color: const Color(0xFF03C75A),
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            const SizedBox(height: 12),
+            Text('다운로드 중... ${(_progress * 100).toInt()}%',
+                style: const TextStyle(fontSize: 13, color: Colors.black54)),
+          ],
+        );
+
+      case _Phase.done:
+        return const Text('다운로드 완료!\n확인을 눌러 설치를 진행하세요.');
+
+      case _Phase.error:
+        return Text('오류: $_errorMsg',
+            style: const TextStyle(color: Colors.red));
+    }
+  }
+
+  List<Widget> _buildActions() {
+    switch (_phase) {
+      case _Phase.idle:
+        return [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('나중에', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: _startDownload,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF03C75A),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('업데이트'),
+          ),
+        ];
+
+      case _Phase.downloading:
+        return [
+          TextButton(
+            onPressed: null,
+            child: const Text('다운로드 중...', style: TextStyle(color: Colors.grey)),
+          ),
+        ];
+
+      case _Phase.done:
+        return [
+          ElevatedButton(
+            onPressed: _install,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF03C75A),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('설치하기'),
+          ),
+        ];
+
+      case _Phase.error:
+        return [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
+          TextButton(
+            onPressed: _startDownload,
+            child: const Text('재시도'),
+          ),
+        ];
+    }
+  }
+
+  Future<void> _startDownload() async {
+    setState(() { _phase = _Phase.downloading; _progress = 0; });
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final savePath = '${dir.path}/caify_update.apk';
+
+      final req = http.Request('GET', Uri.parse(widget.apkUrl));
+      final streamed = await req.send().timeout(const Duration(minutes: 5));
+      final total = streamed.contentLength ?? 0;
+      int received = 0;
+
+      final sink = File(savePath).openWrite();
+      await for (final chunk in streamed.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0 && mounted) {
+          setState(() => _progress = received / total);
+        }
+      }
+      await sink.flush();
+      await sink.close();
+
+      if (mounted) setState(() { _phase = _Phase.done; _progress = 1.0; });
+    } catch (e) {
+      if (mounted) setState(() { _phase = _Phase.error; _errorMsg = e.toString(); });
+    }
+  }
+
+  Future<void> _install() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final apkPath = '${dir.path}/caify_update.apk';
+      await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
+    } catch (e) {
+      if (mounted) setState(() { _phase = _Phase.error; _errorMsg = '설치 실행 실패: $e'; });
+    }
+  }
+}
+
+enum _Phase { idle, downloading, done, error }

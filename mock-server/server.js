@@ -537,6 +537,19 @@ app.post('/admin/posts/:id/approve', (req, res) => {
   res.json({ ok: true, message: '승인 완료' });
 });
 
+// ════════════════════════════════════════════════════════════════
+// GET /api/version  — 앱 버전 및 APK 다운로드 URL
+// Flutter 앱이 시작 시 체크. 현재 버전보다 높으면 업데이트 다이얼로그 표시.
+// ════════════════════════════════════════════════════════════════
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: '1.0.0',          // 배포 시 버전 올리기
+    apk_url: 'https://caify.ai/download/caify_latest.apk',  // 실 APK URL
+    notes: '최신 버전입니다.',   // 업데이트 내용 (선택)
+    force: false,               // true면 '나중에' 버튼 숨김
+  });
+});
+
 // ── 상태 확인 ────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({

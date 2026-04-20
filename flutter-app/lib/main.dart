@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 import 'screens/post_list_screen.dart';
 import 'services/api_service.dart';
+import 'services/update_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +43,10 @@ class _SplashRouterState extends State<_SplashRouter> {
   }
 
   Future<void> _route() async {
+    // 업데이트 체크 (로그인 여부와 관계없이 먼저 실행)
+    await UpdateService.checkAndPrompt(context);
+
+    if (!mounted) return;
     final loggedIn = await ApiService.isLoggedIn();
     if (!mounted) return;
     if (loggedIn) {
