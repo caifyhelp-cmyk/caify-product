@@ -10,8 +10,8 @@ class Post {
     required this.id,
     required this.title,
     required this.html,
-    required this.status,
-    required this.createdAt,
+    this.status = '',
+    this.createdAt = '',
     this.tags = const [],
   });
 
@@ -27,7 +27,7 @@ class Post {
       id:        j['id'] as int,
       title:     j['title'] as String,
       html:      j['html'] as String,
-      status:    j['status'] as String,
+      status:    j['status']?.toString() ?? '',
       createdAt: j['created_at'] ?? '',
       tags:      tags,
     );

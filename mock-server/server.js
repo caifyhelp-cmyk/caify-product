@@ -186,6 +186,56 @@ const prompts = [
 
 let nextPostId = 5;
 
+// ── 채팅 메시지 (시스템 → 고객 / 고객 → 시스템) ────────────────
+let messages = [
+  {
+    id: 1,
+    member_pk: 1,
+    type: 'post.created',
+    is_system: true,
+    text: '안녕하세요! 새 블로그 포스팅이 준비됐어요 🎉\n\n"치아 임플란트 완전 가이드 2026"\n\n내용을 확인하고 네이버 블로그에 발행해 보세요!',
+    post_id: 1,
+    post_title: '[샘플] 치아 임플란트 완전 가이드 2026',
+    post_html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>임플란트는 <strong>자연치아와 가장 유사한 기능</strong>을 회복할 수 있는 시술입니다.</p>',
+    meta: null,
+    actions: [
+      { label: '포스팅 보기', action_key: 'view_post' },
+      { label: '에디터 열기', action_key: 'publish_post' },
+    ],
+    read: false,
+    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 2,
+    member_pk: 1,
+    type: 'rank.check',
+    is_system: true,
+    text: '📊 "임플란트 강남" 키워드 순위 결과입니다.\n\n7일 전: 측정 불가 → 현재: 12위\n\n꾸준히 포스팅하면 상위 노출이 가능합니다!',
+    post_id: null,
+    post_title: null,
+    post_html: null,
+    meta: { keyword: '임플란트 강남', rank: 12, prev_rank: null, check_day: 7 },
+    actions: [],
+    read: false,
+    created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 3,
+    member_pk: 1,
+    type: 'strategy.weekly',
+    is_system: true,
+    text: '📋 이번 주 콘텐츠 전략 요약\n\n✅ 발행 예정 키워드\n• 스케일링 주기\n• 임플란트 비용\n• 치아교정 기간\n\n⏱ 예상 발행: 월/수/금 오전 10시',
+    post_id: null,
+    post_title: null,
+    post_html: null,
+    meta: { week: '2026-W17' },
+    actions: [],
+    read: true,
+    created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+let nextMsgId = 4;
+
 // ── 인증 헬퍼 ────────────────────────────────────────────────────
 // Electron/Flutter: Authorization: Bearer <api_token>
 function getMemberByToken(req) {
@@ -498,6 +548,118 @@ app.post('/api/posts/:id/reject', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// GET /api/messages?member_pk=X&after_id=Y  — 채팅 메시지 목록
+// Flutter ChatScreen이 15초마다 폴링
+// ════════════════════════════════════════════════════════════════
+app.get('/api/messages', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const memberPk = parseInt(req.query.member_pk || '0', 10);
+  if (!isAdmin(member) && memberPk !== member.id) {
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+  }
+
+  const afterId = parseInt(req.query.after_id || '0', 10);
+
+  let result = messages.filter(m => {
+    if (!isAdmin(member) && m.member_pk !== memberPk) return false;
+    if (afterId > 0 && m.id <= afterId) return false;
+    return true;
+  });
+
+  res.json(result.map(m => ({
+    id: m.id,
+    type: m.type,
+    is_system: m.is_system,
+    text: m.text,
+    post_id: m.post_id,
+    post_title: m.post_title,
+    post_html: m.post_html,
+    meta: m.meta,
+    actions: m.actions,
+    read: m.read,
+    created_at: m.created_at,
+  })));
+});
+
+// ════════════════════════════════════════════════════════════════
+// POST /api/messages  — 고객이 직접 텍스트 입력 시
+// ════════════════════════════════════════════════════════════════
+app.post('/api/messages', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const { member_pk, text } = req.body;
+  if (!text?.trim()) return res.status(422).json({ ok: false, error: 'text is required' });
+
+  const pk = parseInt(member_pk || '0', 10) || member.id;
+
+  const msg = {
+    id: nextMsgId++,
+    member_pk: pk,
+    type: 'user_text',
+    is_system: false,
+    text: text.trim(),
+    post_id: null,
+    post_title: null,
+    post_html: null,
+    meta: null,
+    actions: [],
+    read: true,
+    created_at: new Date().toISOString(),
+  };
+  messages.push(msg);
+
+  // 자동 응답 (개발 편의)
+  const autoReply = {
+    id: nextMsgId++,
+    member_pk: pk,
+    type: 'user_text',
+    is_system: true,
+    text: `말씀 주신 내용 확인했습니다!\n"${text.trim().substring(0, 30)}" 요청을 반영해 다음 포스팅에 적용하겠습니다.`,
+    post_id: null, post_title: null, post_html: null,
+    meta: null, actions: [], read: false,
+    created_at: new Date(Date.now() + 1000).toISOString(),
+  };
+  messages.push(autoReply);
+
+  console.log(`  [msg] member=${pk} text="${text.trim().substring(0, 40)}"`);
+  res.status(201).json({ ok: true, id: msg.id });
+});
+
+// ════════════════════════════════════════════════════════════════
+// POST /api/messages/:id/action  — 버튼 액션 (view_post, publish_post 등)
+// ════════════════════════════════════════════════════════════════
+app.post('/api/messages/:id/action', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const msgId = parseInt(req.params.id, 10);
+  const msg = messages.find(m => m.id === msgId);
+  if (!msg) return res.status(404).json({ ok: false, error: '메시지를 찾을 수 없습니다.' });
+
+  const { action_key } = req.body;
+  console.log(`  [action] msg=${msgId} action=${action_key}`);
+
+  msg.read = true;
+  res.json({ ok: true });
+});
+
+// ════════════════════════════════════════════════════════════════
+// POST /api/messages/:id/read  — 읽음 처리
+// ════════════════════════════════════════════════════════════════
+app.post('/api/messages/:id/read', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const msgId = parseInt(req.params.id, 10);
+  const msg = messages.find(m => m.id === msgId);
+  if (msg) msg.read = true;
+  res.json({ ok: true });
+});
+
+// ════════════════════════════════════════════════════════════════
 // 관리자 전용 API
 // GET  /admin/posts                    → 전체 포스트 목록
 // POST /admin/posts/:id/approve        → 포스트 승인 (status 0→1)
@@ -571,6 +733,10 @@ app.get('/', (req, res) => {
       'POST /api/posts/:id/reject',
       'GET  /admin/posts',
       'POST /admin/posts/:id/approve',
+      'GET  /api/messages?member_pk=X&after_id=Y',
+      'POST /api/messages',
+      'POST /api/messages/:id/action',
+      'POST /api/messages/:id/read',
     ],
   });
 });

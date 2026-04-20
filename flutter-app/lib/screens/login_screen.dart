@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import 'post_list_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -40,7 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result['ok'] == true) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const PostListScreen()),
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } else {
       setState(() {

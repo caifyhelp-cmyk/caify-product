@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
-import 'screens/post_list_screen.dart';
+import 'screens/home_screen.dart';
 import 'services/api_service.dart';
 import 'services/update_service.dart';
 
@@ -51,7 +51,7 @@ class _SplashRouterState extends State<_SplashRouter> {
     if (!mounted) return;
     if (loggedIn) {
       Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (_) => const PostListScreen()));
+          context, MaterialPageRoute(builder: (_) => const HomeScreen()));
     } else {
       Navigator.pushReplacement(
           context, MaterialPageRoute(builder: (_) => const LoginScreen()));

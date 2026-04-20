@@ -82,6 +82,8 @@ class ApiService {
   }
 
   // ── 공통 헤더 ────────────────────────────────────────────────
+  static Future<Map<String, String>> authHeaders() async => _headers();
+
   static Future<Map<String, String>> _headers() async {
     final cfg = await loadConfig();
     return {
