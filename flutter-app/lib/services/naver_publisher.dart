@@ -1,6 +1,6 @@
 /// Naver Smart Editor 3 자동화 JS 스니펫 모음
 /// flutter_inappwebview의 evaluateJavascript()로 메인 프레임에서 실행
-/// → iframe[name='mainFrame'].contentDocument 접근 (same-origin 이므로 가능)
+/// → iframe[name='mainFrame'].contentDocument 접근 (same-origin)
 library naver_publisher;
 
 class NaverPublisher {
@@ -66,26 +66,54 @@ class NaverPublisher {
     ''';
   }
 
-  // ── 저장 버튼 클릭 ───────────────────────────────────────────
-  static String jsSave() => r'''
+  // ── 발행 버튼 클릭 ───────────────────────────────────────────
+  /// 에디터 상단 우측 '발행' 버튼 클릭
+  /// 반환값: 'ok' | 'no_publish_btn|<button_list>'
+  static String jsClickPublish() => r'''
     (function() {
       const iframe = document.querySelector("iframe[name='mainFrame']");
       if (!iframe || !iframe.contentDocument) return 'no_iframe';
       const doc = iframe.contentDocument;
       const btn =
-        doc.querySelector('button.save_btn__bzc5B') ||
-        doc.querySelector('button[data-click-area="tpb.save"]') ||
-        doc.querySelector('.save_btn_area__Qo0W7 button') ||
+        doc.querySelector('button.publish_btn__m9KHr') ||
+        doc.querySelector('button[data-click-area="tpb.publish"]') ||
+        doc.querySelector('button[class*="publish_btn"]') ||
         Array.from(doc.querySelectorAll('button')).find(b =>
-          (b.innerText || '').trim() === '저장'
+          (b.innerText || '').trim() === '발행'
         );
       if (!btn) {
-        // 디버그: 버튼 목록 반환
-        return 'no_save_btn|' + Array.from(doc.querySelectorAll('button'))
-          .map(b => (b.innerText||'').trim().substring(0,15) + ':' + b.className.substring(0,20))
+        const all = Array.from(doc.querySelectorAll('button'))
+          .map(b => (b.innerText||'').trim().substring(0,15))
           .join(',');
+        return 'no_publish_btn|' + all;
       }
       btn.click();
+      return 'ok';
+    })()
+  ''';
+
+  // ── 발행 확인 패널 클릭 ──────────────────────────────────────
+  /// '발행' 클릭 후 뜨는 설정 패널의 최종 확인 버튼 클릭
+  /// 반환값: 'ok' | 'not_found' (패널 없이 바로 발행된 경우 정상)
+  static String jsConfirmPublish() => r'''
+    (function() {
+      const iframe = document.querySelector("iframe[name='mainFrame']");
+      if (!iframe || !iframe.contentDocument) return 'no_iframe';
+      const doc = iframe.contentDocument;
+      const confirmBtn =
+        doc.querySelector('.se-publish-layer button[class*="confirm"]') ||
+        doc.querySelector('[class*="LayerPublish"] button[class*="confirm"]') ||
+        doc.querySelector('[class*="publish_layer"] button[class*="ok"]') ||
+        doc.querySelector('[class*="publisharea"] button[class*="publish"]') ||
+        Array.from(doc.querySelectorAll('button')).find(b => {
+          final t = (b.innerText || '').trim();
+          final cls = b.className || '';
+          return (t === '발행' || t === '확인') &&
+                 (cls.includes('confirm') || cls.includes('ok') ||
+                  cls.includes('submit') || cls.includes('publish'));
+        });
+      if (!confirmBtn) return 'not_found';
+      confirmBtn.click();
       return 'ok';
     })()
   ''';
@@ -94,7 +122,7 @@ class NaverPublisher {
   static bool isLoginUrl(String url) =>
       url.contains('nidlogin') || url.contains('login.naver');
 
-  // ── JS 문자열 이스케이프 (백슬래시, 따옴표, 개행) ─────────────
+  // ── JS 문자열 이스케이프 ──────────────────────────────────────
   static String _escapeJs(String s) => s
       .replaceAll(r'\', r'\\')
       .replaceAll('"', r'\"')

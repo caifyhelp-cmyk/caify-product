@@ -8,7 +8,11 @@ enum PublishState { loading, loginRequired, injecting, saving, done, failed }
 
 class PublishScreen extends StatefulWidget {
   final Post post;
-  const PublishScreen({super.key, required this.post});
+
+  /// autoMode: true면 완료/실패 시 자동으로 pop (버튼 탭 불필요)
+  final bool autoMode;
+
+  const PublishScreen({super.key, required this.post, this.autoMode = false});
 
   @override
   State<PublishScreen> createState() => _PublishScreenState();
@@ -19,23 +23,19 @@ class _PublishScreenState extends State<PublishScreen> {
   PublishState _state = PublishState.loading;
   String _statusMsg = '에디터 로드 중...';
   bool _webViewVisible = false;
-
-  // 중복 실행 방지 플래그
   bool _waitingStarted = false;
 
-  // evaluateJavascript 결과를 안전하게 문자열로 변환
-  // (dynamic 타입으로 반환되므로 null-safe + toString() 사용)
   static String _jsStr(dynamic result) => result?.toString() ?? '';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('발행 중'),
+        title: Text(widget.autoMode ? '자동 발행 중' : '발행 중'),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 0,
-        leading: _state == PublishState.done || _state == PublishState.failed
+        leading: (_state == PublishState.done || _state == PublishState.failed) && !widget.autoMode
             ? IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.pop(context),
@@ -45,7 +45,6 @@ class _PublishScreenState extends State<PublishScreen> {
       ),
       body: Stack(
         children: [
-          // ── Naver 에디터 WebView ──────────────────────────────
           Opacity(
             opacity: _webViewVisible ? 1.0 : 0.0,
             child: InAppWebView(
@@ -70,8 +69,6 @@ class _PublishScreenState extends State<PublishScreen> {
               },
             ),
           ),
-
-          // ── 상태 오버레이 ─────────────────────────────────────
           if (!_webViewVisible || _state != PublishState.loginRequired)
             _buildOverlay(),
         ],
@@ -106,7 +103,8 @@ class _PublishScreenState extends State<PublishScreen> {
                   color: isError ? Colors.red : Colors.black87,
                 ),
               ),
-              if (isDone || isError) ...[
+              // autoMode: 완료/실패 후 자동 pop, 버튼 표시 안 함
+              if ((isDone || isError) && !widget.autoMode) ...[
                 const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, isDone),
@@ -126,29 +124,23 @@ class _PublishScreenState extends State<PublishScreen> {
     );
   }
 
-  // ── 페이지 로드 완료 이벤트 ───────────────────────────────────
   Future<void> _onPageLoaded(String url) async {
     if (url.isEmpty) return;
 
-    // 로그인 페이지 감지
     if (NaverPublisher.isLoginUrl(url)) {
       setState(() {
         _webViewVisible = true;
         _state = PublishState.loginRequired;
         _statusMsg = '네이버 로그인이 필요합니다.\n아래에서 로그인 후 자동으로 발행됩니다.';
       });
-      _waitingStarted = false; // 로그인 후 재시도 허용
+      _waitingStarted = false;
       return;
     }
 
-    // blog.naver.com 이 아닌 리다이렉트는 무시
     if (!url.contains('blog.naver.com')) return;
-
-    // 이미 대기 시작했으면 중복 실행 방지
     if (_waitingStarted) return;
     _waitingStarted = true;
 
-    // 로그인 완료 후 에디터 페이지
     if (_state == PublishState.loginRequired) {
       setState(() {
         _webViewVisible = false;
@@ -160,7 +152,6 @@ class _PublishScreenState extends State<PublishScreen> {
     await _waitForEditor();
   }
 
-  // ── 에디터 준비 대기 (최대 30초 폴링) ─────────────────────────
   Future<void> _waitForEditor() async {
     for (int i = 0; i < 30; i++) {
       await Future.delayed(const Duration(seconds: 1));
@@ -169,71 +160,86 @@ class _PublishScreenState extends State<PublishScreen> {
       final raw = await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsIsEditorReady(),
       );
-      final result = _jsStr(raw);
-      debugPrint('[editor] poll $i: $result');
-
-      if (result == 'ready') {
-        await _doInject();
+      if (_jsStr(raw) == 'ready') {
+        await _doInjectAndPublish();
         return;
       }
     }
     _setStatus(PublishState.failed, '에디터 로드 타임아웃 (30초)\n앱을 다시 시도해 주세요.');
   }
 
-  // ── 내용 주입 + 저장 ─────────────────────────────────────────
-  Future<void> _doInject() async {
+  Future<void> _doInjectAndPublish() async {
     if (!mounted) return;
     _setStatus(PublishState.injecting, '포스팅 내용 입력 중...');
 
     // 제목 주입
-    final titleRaw = await _ctrl!.evaluateJavascript(
+    final titleResult = _jsStr(await _ctrl!.evaluateJavascript(
       source: NaverPublisher.jsInjectTitle(widget.post.title),
-    );
-    final titleResult = _jsStr(titleRaw);
+    ));
     debugPrint('[inject] title: $titleResult');
     if (titleResult != 'ok') {
-      _setStatus(PublishState.failed, '제목 입력 실패\n($titleResult)\n\n에디터가 완전히 로드된 후 다시 시도해 주세요.');
+      _setStatus(PublishState.failed, '제목 입력 실패\n($titleResult)');
+      _autoPop(false);
       return;
     }
 
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // 본문 HTML 주입
-    final bodyRaw = await _ctrl!.evaluateJavascript(
+    // 본문 주입
+    final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
       source: NaverPublisher.jsInjectHtml(widget.post.html),
-    );
-    final bodyResult = _jsStr(bodyRaw);
+    ));
     debugPrint('[inject] body: $bodyResult');
     if (bodyResult != 'ok') {
       _setStatus(PublishState.failed, '본문 입력 실패\n($bodyResult)');
+      _autoPop(false);
       return;
     }
 
-    // SE3 HTML 파싱 대기
     await Future.delayed(const Duration(seconds: 2));
 
-    _setStatus(PublishState.saving, '저장 중...');
+    _setStatus(PublishState.saving, '발행 중...');
 
-    // 저장 버튼 클릭
-    final saveRaw = await _ctrl!.evaluateJavascript(
-      source: NaverPublisher.jsSave(),
-    );
-    final saveResult = _jsStr(saveRaw);
-    debugPrint('[inject] save: $saveResult');
-    if (saveResult != 'ok') {
-      _setStatus(PublishState.failed, '저장 버튼을 찾지 못했습니다\n($saveResult)');
+    // 발행 버튼 클릭
+    final publishResult = _jsStr(await _ctrl!.evaluateJavascript(
+      source: NaverPublisher.jsClickPublish(),
+    ));
+    debugPrint('[publish_btn] $publishResult');
+    if (!publishResult.startsWith('ok')) {
+      _setStatus(PublishState.failed, '발행 버튼을 찾지 못했습니다\n($publishResult)');
+      _autoPop(false);
       return;
     }
 
-    // 저장 완료 대기
+    // 발행 확인 패널 대기 후 클릭 (최대 5초)
+    for (int i = 0; i < 5; i++) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (_ctrl == null || !mounted) return;
+      final confirmResult = _jsStr(await _ctrl!.evaluateJavascript(
+        source: NaverPublisher.jsConfirmPublish(),
+      ));
+      debugPrint('[confirm] $confirmResult');
+      if (confirmResult == 'ok') break;
+      // 'not_found' 이면 패널 없이 바로 발행된 것 — 계속 진행
+    }
+
+    // 발행 완료 대기
     await Future.delayed(const Duration(seconds: 3));
 
-    // API 완료 통보
     await ApiService.markPublished(widget.post.id);
 
     if (mounted) {
       _setStatus(PublishState.done, "'${widget.post.title}'\n발행이 완료되었습니다!");
+      _autoPop(true);
     }
+  }
+
+  /// autoMode일 때 일정 시간 후 자동으로 화면 닫기
+  void _autoPop(bool success) {
+    if (!widget.autoMode) return;
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) Navigator.pop(context, success);
+    });
   }
 
   void _setStatus(PublishState state, String msg) {

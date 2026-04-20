@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/api_service.dart';
@@ -17,31 +18,84 @@ class _PostListScreenState extends State<PostListScreen>
   List<Post> _readyPosts     = [];
   List<Post> _publishedPosts = [];
   bool _loading = false;
+  bool _autoPublishing = false;
+
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
     _load();
+    // 5분마다 새 포스트 확인 후 자동 발행
+    _pollTimer = Timer.periodic(const Duration(minutes: 5), (_) => _load());
   }
 
   @override
   void dispose() {
     _tabCtrl.dispose();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _load() async {
+    if (_loading) return;
     setState(() => _loading = true);
+
     final ready     = await ApiService.fetchPosts(status: 'ready');
     final published = await ApiService.fetchPosts(status: 'published');
+
     if (mounted) {
       setState(() {
         _readyPosts     = ready;
         _publishedPosts = published;
         _loading        = false;
       });
+      // 로드 후 대기 포스트가 있으면 자동 발행 시작
+      if (ready.isNotEmpty && !_autoPublishing) {
+        _autoPublishAll();
+      }
     }
+  }
+
+  /// 대기 중인 포스트를 순차적으로 자동 발행
+  Future<void> _autoPublishAll() async {
+    if (_autoPublishing || !mounted) return;
+    _autoPublishing = true;
+
+    for (final post in List<Post>.from(_readyPosts)) {
+      if (!mounted) break;
+      final success = await _publishAuto(post);
+      if (!mounted) break;
+      if (success) {
+        setState(() => _readyPosts.removeWhere((p) => p.id == post.id));
+      }
+      // 포스트 간 간격
+      await Future.delayed(const Duration(seconds: 2));
+    }
+
+    _autoPublishing = false;
+    if (mounted) _load(); // 완료 후 목록 갱신
+  }
+
+  /// autoMode로 발행 (화면 표시 최소화, 자동 팝)
+  Future<bool> _publishAuto(Post post) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PublishScreen(post: post, autoMode: true),
+      ),
+    );
+    return result == true;
+  }
+
+  /// 수동 발행 (버튼 탭 시)
+  Future<void> _publishManual(Post post) async {
+    final success = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => PublishScreen(post: post)),
+    );
+    if (success == true) _load();
   }
 
   @override
@@ -49,8 +103,23 @@ class _PostListScreenState extends State<PostListScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Caify', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF03C75A), // Naver green
+        title: Row(
+          children: [
+            const Text('Caify', style: TextStyle(fontWeight: FontWeight.bold)),
+            if (_autoPublishing) ...[
+              const SizedBox(width: 10),
+              const SizedBox(
+                width: 14, height: 14,
+                child: CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text('자동 발행 중', style: TextStyle(fontSize: 13)),
+            ],
+          ],
+        ),
+        backgroundColor: const Color(0xFF03C75A),
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -60,7 +129,7 @@ class _PostListScreenState extends State<PostListScreen>
             onPressed: () async {
               await Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const SettingsScreen()));
-              _load(); // 설정 변경 후 새로 로드
+              _load();
             },
           ),
         ],
@@ -140,7 +209,7 @@ class _PostListScreenState extends State<PostListScreen>
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                   ),
-                  onPressed: () => _publish(post),
+                  onPressed: _autoPublishing ? null : () => _publishManual(post),
                 ),
               ),
             ] else ...[
@@ -152,19 +221,11 @@ class _PostListScreenState extends State<PostListScreen>
                   Text('발행 완료',
                       style: TextStyle(color: Color(0xFF03C75A), fontSize: 12)),
                 ],
-              )
+              ),
             ],
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _publish(Post post) async {
-    final success = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => PublishScreen(post: post)),
-    );
-    if (success == true) _load(); // 발행 완료 후 목록 갱신
   }
 }
