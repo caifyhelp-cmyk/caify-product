@@ -706,9 +706,9 @@ app.post('/admin/posts/:id/approve', (req, res) => {
 // ════════════════════════════════════════════════════════════════
 app.get('/api/version', (req, res) => {
   res.json({
-    version: '1.0.0',          // 배포 시 버전 올리기
-    apk_url: 'https://caify.ai/download/caify_latest.apk',  // 실 APK URL
-    notes: '최신 버전입니다.',   // 업데이트 내용 (선택)
+    version: '1.0.0',          // 배포 시 버전 올리기 (pubspec.yaml과 맞춰야 함)
+    apk_url: 'https://github.com/caifyhelp-cmyk/caify-product/releases/download/v1.0.0/caify_1.0.0.apk',
+    notes: '채팅 알림, 포스팅 뷰어, 하단 탭 내비게이션 추가',
     force: false,               // true면 '나중에' 버튼 숨김
   });
 });

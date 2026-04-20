@@ -1,0 +1,78 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'flutter-app/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: flutter-app
+        run: flutter pub get
+
+      - name: Build APK (release)
+        working-directory: flutter-app
+        run: flutter build apk --release
+
+      # ── 버전 읽기 (pubspec.yaml → 1.0.0+1 → v1.0.0) ──────────
+      - name: Read version
+        id: ver
+        working-directory: flutter-app
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+          echo "plain=$VERSION" >> $GITHUB_OUTPUT
+
+      # ── APK 이름 변경 ──────────────────────────────────────────
+      - name: Rename APK
+        run: |
+          cp flutter-app/build/app/outputs/flutter-apk/app-release.apk \
+             caify_${{ steps.ver.outputs.plain }}.apk
+
+      # ── GitHub Release 생성 + APK 업로드 ──────────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: Caify ${{ steps.ver.outputs.version }}
+          body: |
+            ## Caify ${{ steps.ver.outputs.version }}
+
+            ### 설치 방법
+            1. 아래 `caify_${{ steps.ver.outputs.plain }}.apk` 파일을 다운로드
+            2. 안드로이드 기기에서 설치 (출처 불명 앱 허용 필요)
+
+            ### 자동 업데이트
+            이미 앱이 설치된 사용자는 앱 실행 시 자동으로 업데이트 알림을 받습니다.
+          files: caify_${{ steps.ver.outputs.plain }}.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── APK URL을 출력 (서버 version API 업데이트 참고용) ──────
+      - name: Print APK URL
+        run: |
+          echo "APK URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.version }}/caify_${{ steps.ver.outputs.plain }}.apk"
