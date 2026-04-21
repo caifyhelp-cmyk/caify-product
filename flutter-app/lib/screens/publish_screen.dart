@@ -166,18 +166,18 @@ class _PublishScreenState extends State<PublishScreen> {
                 builtInZoomControls: true,
                 displayZoomControls: false,
                 useWideViewPort: true,
-                // 데스크톱 UA — 모바일 UA + 데스크톱 URL 불일치로 인한 에러 방지
                 userAgent:
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'Mozilla/5.0 (Linux; Android 13; SM-G991B) '
                     'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/120.0.0.0 Safari/537.36',
+                    'Chrome/120.0.0.0 Mobile Safari/537.36',
               ),
               onWebViewCreated: (ctrl) async {
                 _ctrl = ctrl;
                 // 쿠키 먼저 복원 → 그 다음 URL 로드 (로그인 유지)
                 await _restoreNaverCookies();
+                // 모바일 UA → 모바일 에디터 URL 직접 접근
                 await ctrl.loadUrl(urlRequest: URLRequest(
-                  url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
+                  url: WebUri('https://m.blog.naver.com/PostWriteForm.naver'),
                 ));
               },
               onLoadStop: (ctrl, url) async {
@@ -306,7 +306,7 @@ class _PublishScreenState extends State<PublishScreen> {
         await Future.delayed(const Duration(seconds: 2));
         if (_ctrl == null || !mounted) return;
         await _ctrl!.loadUrl(urlRequest: URLRequest(
-          url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
+          url: WebUri('https://m.blog.naver.com/PostWriteForm.naver'),
         ));
       } else {
         // 재시도 후도 에러 → WebView 노출하고 사용자가 직접 이동
@@ -352,8 +352,7 @@ class _PublishScreenState extends State<PublishScreen> {
         debugPrint('[onPageLoaded] 리다이렉트 재시도 $_redirectAttempts');
         await Future.delayed(const Duration(seconds: 1));
         if (_ctrl == null || !mounted) return;
-        // 데스크톱 UA이므로 데스크톱 에디터 URL 사용
-        final writeUrl = 'https://blog.naver.com/GoBlogWrite.naver';
+        const writeUrl = 'https://m.blog.naver.com/PostWriteForm.naver';
         await _ctrl!.loadUrl(urlRequest: URLRequest(url: WebUri(writeUrl)));
       } else {
         if (mounted) {
