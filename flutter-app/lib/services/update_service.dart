@@ -1,10 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
+
+const _installChannel = MethodChannel('caify/install');
 
 class UpdateService {
   /// 앱 시작 시 호출. 새 버전이 있으면 업데이트 다이얼로그 표시.
@@ -283,9 +286,31 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 
   Future<void> _install() async {
     try {
+      // Android 8+: 출처 불명 앱 설치 권한 런타임 체크
+      final canInstall = await _installChannel.invokeMethod<bool>('canInstall') ?? true;
+      if (!canInstall) {
+        if (!mounted) return;
+        setState(() {
+          _phase    = _Phase.error;
+          _errorMsg = '설치 권한이 필요합니다.\n설정 화면에서 "이 소스 허용"을 켜주세요.';
+        });
+        // 설정 화면 바로 열기
+        await _installChannel.invokeMethod('openInstallSettings');
+        return;
+      }
+
       final dir = await getTemporaryDirectory();
       final apkPath = '${dir.path}/caify_update.apk';
-      await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
+      final result = await OpenFile.open(
+          apkPath, type: 'application/vnd.android.package-archive');
+
+      if (result.type != ResultType.done && mounted) {
+        setState(() {
+          _phase    = _Phase.error;
+          _errorMsg = '설치 실패: ${result.message}\n\n'
+              '직접 설치하려면 설정 → 앱 → 출처 불명 앱 허용 후 다시 시도해 주세요.';
+        });
+      }
     } catch (e) {
       if (mounted) setState(() { _phase = _Phase.error; _errorMsg = '설치 실행 실패: $e'; });
     }
