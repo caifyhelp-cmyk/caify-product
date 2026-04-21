@@ -78,7 +78,7 @@ let posts = [
     subject: '임플란트',
     intro: '임플란트가 고민이신 분들을 위한 핵심 정보',
     html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p>',
-    naver_html: '<div class="se-main-container"><h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>🦷 테스트 발행 콘텐츠입니다.</p></div>',
+    naver_html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>임플란트는 자연치아와 가장 유사한 기능을 회복할 수 있는 시술입니다.</p><img src="https://picsum.photos/seed/caify_test/800/400" alt="임플란트 시술 예시" style="max-width:100%;height:auto;display:block;margin:16px 0"><p>🦷 [Caify 자동입력 테스트] 이미지가 네이버 라이브러리에 등록됐는지 확인하세요.</p>',
     tags: ['임플란트', '강남치과', '임플란트비용'],
     status: 1,          // 1=승인완료
     posting_date: null, // null=아직 미발행
@@ -305,6 +305,7 @@ app.get('/api/posts', (req, res) => {
     id: p.id,
     title: p.title,
     html: p.naver_html,   // Electron/Flutter가 주입하는 HTML = naver_html
+    tags: p.tags || [],
     status: p.status,
     posting_date: p.posting_date,
     created_at: p.created_at,
