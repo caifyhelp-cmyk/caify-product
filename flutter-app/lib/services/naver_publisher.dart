@@ -139,9 +139,14 @@ class NaverPublisher {
           }
         } catch(e) {}
 
-        // 방법 B-2: innerText + InputEvent
+        // 방법 B-2: innerText + beforeinput/input (SE3 내부 상태 갱신)
         try {
           el.focus();
+          // 기존 내용 먼저 지우기
+          el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteContentBackward' }));
+          el.innerHTML = '';
+          // 새 텍스트 삽입 — beforeinput → mutation → input 순서로 SE3 인식
+          el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: "$escaped" }));
           el.innerText = "$escaped";
           el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: "$escaped" }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -242,23 +247,32 @@ class NaverPublisher {
         });
         if (!el) return 'no_body_el';
 
-        // 이미 내용 있으면 skip (paste 성공한 경우)
+        // placeholder 텍스트는 실제 내용이 아님 — SE3는 placeholder를 DOM에 직접 렌더링
+        const placeholder = (el.getAttribute('data-placeholder') || '').trim();
         const txt = (el.innerText || el.textContent || '').trim();
-        if (txt.length > 5) return 'already_filled:' + txt.substring(0, 30);
+        const isPlaceholder = txt === placeholder || txt === '글감과 함께 나의 일상을 기록해보세요!' || txt === '내용을 입력해주세요.';
+        if (txt.length > 5 && !isPlaceholder) return 'already_filled:' + txt.substring(0, 30);
 
-        // 커서 이동 후 execCommand insertHTML
+        // 기존 내용(placeholder 포함) 제거 후 커서 이동
+        el.innerHTML = '';
         el.click();
         el.focus();
+
+        // execCommand insertHTML
         try {
           const win = doc.defaultView || window;
           const sel = win.getSelection();
-          sel.selectAllChildren(el);
+          const r = doc.createRange();
+          r.selectNodeContents(el);
+          sel.removeAllRanges();
+          sel.addRange(r);
           if (doc.execCommand('insertHTML', false, "$escaped")) return 'execCommand_ok';
         } catch(e) {}
 
-        // 최후 수단: innerHTML 직접
+        // 최후 수단: innerHTML 직접 + input 이벤트
         el.innerHTML = "$escaped";
-        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertFromPaste' }));
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return 'innerHTML_ok';
       })()
