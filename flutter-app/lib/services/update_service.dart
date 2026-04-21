@@ -25,14 +25,12 @@ class UpdateService {
 
   // ── 버전 정보 fetch ─────────────────────────────────────────
   static Future<Map<String, dynamic>?> _fetchVersionInfo() async {
-    final cfg = await ApiService.loadConfig();
-    final base = cfg['apiBase']?.isNotEmpty == true
-        ? cfg['apiBase']!
-        : ApiService.defaultApiBase;
+    // 업데이트 체크는 항상 기본 서버(Render)로 — 저장된 URL이 죽어있을 수 있음
+    final base = ApiService.defaultApiBase;
 
     final res = await http
         .get(Uri.parse('$base/api/version'))
-        .timeout(const Duration(seconds: 6));
+        .timeout(const Duration(seconds: 10));
 
     if (res.statusCode != 200) return null;
 

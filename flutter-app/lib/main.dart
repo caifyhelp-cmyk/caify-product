@@ -39,7 +39,8 @@ class _SplashRouterState extends State<_SplashRouter> {
   @override
   void initState() {
     super.initState();
-    _route();
+    // 첫 프레임 빌드 후 실행 — initState에서 showDialog 호출 시 context 미준비 문제 방지
+    WidgetsBinding.instance.addPostFrameCallback((_) => _route());
   }
 
   Future<void> _route() async {
