@@ -333,105 +333,55 @@ class NaverPublisher {
         const iDoc2 = inMain2 ? document
                     : (iframe2 ? (function(){try{return iframe2.contentDocument;}catch(e){return null;}}()) : null);
         if (iDoc2) {
-          iDoc2.__caifyHtml = "$escaped";
+          // HTML → SE3 paragraph[] 변환을 바깥(top-level) 컨텍스트에서 처리
+          // iframe 스크립트 안에서는 iDoc2 등 바깥 변수에 접근 불가이므로 JSON으로 전달
+          const _pd = document.createElement('div');
+          _pd.innerHTML = "$escaped";
+          let _blocks = Array.from(_pd.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li'));
+          if (_blocks.length === 0) {
+            const _raw = _pd.innerHTML.replace(/<br\\s*\\/?>/gi, '\\n');
+            const _tmpDiv = document.createElement('div'); _tmpDiv.innerHTML = _raw;
+            _blocks = (_tmpDiv.textContent||'').split('\\n').filter(s=>s.trim()).map(s=>{
+              const _e = document.createElement('p'); _e.textContent = s; return _e;
+            });
+          }
+          if (_blocks.length === 0) _blocks = [_pd];
+          const _s4 = ()=>Math.floor((1+Math.random())*0x10000).toString(16).substring(1);
+          const _uid = ()=>'SE-'+_s4()+_s4()+'-'+_s4()+'-4'+_s4().substr(1)+'-'+(Math.floor(Math.random()*4+8)).toString(16)+_s4().substr(1)+'-'+_s4()+_s4()+_s4();
+          const _paras = _blocks.filter(b=>(b.textContent||'').trim()).map(b=>({
+            id:_uid(), nodes:[{id:_uid(), value:(b.textContent||'').trim(), '@ctype':'textNode'}], '@ctype':'paragraph'
+          }));
+          if (_paras.length === 0) _paras.push({id:_uid(), nodes:[{id:_uid(), value:'', '@ctype':'textNode'}], '@ctype':'paragraph'});
+
+          iDoc2.__caifyParas = JSON.stringify(_paras);
           iDoc2.__caifyResult2 = null;
           const s2 = iDoc2.createElement('script');
+          // iframe 스크립트: document.__caifyParas 읽어서 SE3 setDocumentData 호출
+          // iDoc2 등 바깥 변수 일절 사용 금지 — document만 사용
           s2.textContent = '(function(){'
             + 'try{'
-            + 'var h=document.__caifyHtml;'
-            // 1순위: SmartEditor exec API — 본문
-            + 'var _smb=window.SmartEditor;'
+            + 'var paras=JSON.parse(document.__caifyParas);'
+            + 'var _sm=window.SmartEditor;'
             + 'var se3b=null;'
-            + 'if(!se3b&&_smb&&_smb._editors){'
-            + '  try{var _edb=_smb._editors;'
-            + '    se3b=Array.isArray(_edb)?_edb[0]:(Object.values(_edb)[0]||null);'
-            + '  }catch(e_edb){}'
+            + 'if(_sm&&_sm._editors){try{var _ed=_sm._editors;se3b=Array.isArray(_ed)?_ed[0]:(Object.values(_ed)[0]||null);}catch(ee){}}'
+            + 'if(!se3b){document.__caifyResult2="se3b_null";return;}'
+            + 'var ds=se3b._documentService;'
+            + 'if(!ds||typeof ds.getDocumentData!=="function"||typeof ds.setDocumentData!=="function"){document.__caifyResult2="no_ds_methods";return;}'
+            + 'var docData=ds.getDocumentData();'
+            + 'var inner=docData&&(docData.document||docData);'
+            + 'var comps=inner&&(inner.componentList||inner.components||inner.body||null);'
+            + 'if(!Array.isArray(comps)||comps.length===0){document.__caifyResult2="no_comps_in_doc";return;}'
+            + 'var textComp=null;'
+            + 'for(var i=0;i<comps.length;i++){'
+            + '  var ct=(comps[i]["@ctype"]||comps[i].ctype||comps[i].type||"").toLowerCase();'
+            + '  if(ct==="documenttitle"||ct==="title"||ct==="document_title")continue;'
+            + '  if(!ct&&("title" in comps[i]||"subTitle" in comps[i]))continue;'
+            + '  textComp=comps[i];break;'
             + '}'
-            + 'if(!se3b&&_smb){try{var _geb=_smb.getEditor();if(_geb&&typeof _geb==="object")se3b=_geb;}catch(e_geb){}}'
-            + 'if(!se3b&&_smb&&Array.isArray(_smb)){se3b=_smb[0]||null;}'
-            + 'if(!se3b&&_smb&&typeof _smb.exec==="function"){se3b=_smb;}'
-            + 'if(se3b){'
-            + '  var ds2=se3b._documentService;'
-            + '  var pap2=se3b._papyrus;'
-            // 방법 1: getDocumentData로 현재 구조 가져와서 body 컴포넌트만 교체 후 setDocumentData
-            // → 타이틀 컴포넌트를 보존하면서 본문만 수정
-            + '  if(ds2&&typeof ds2.getDocumentData==="function"&&typeof ds2.setDocumentData==="function"){'
-            + '    try{'
-            + '      var docData=ds2.getDocumentData();'
-            + '      var docKeys=docData?Object.keys(docData).join(","):"null";'
-            + '      var inner=docData&&(docData.document||docData);'
-            + '      var comps=inner&&(inner.componentList||inner.components||inner.body||null);'
-            + '      if(Array.isArray(comps)&&comps.length>0){'
-            + '        var compTypes=comps.map(function(c){return (c["@ctype"]||c.ctype||c.type||"?")+":"+Object.keys(c).join(";");}).join("|");'
-            + '        var textComp=null;'
-            + '        for(var ci=0;ci<comps.length;ci++){'
-            + '          var ct=(comps[ci]["@ctype"]||comps[ci].ctype||comps[ci].type||"").toLowerCase();'
-            + '          if(ct==="documenttitle"||ct==="title"||ct==="document_title")continue;'
-            // @ctype 없거나 title 아닌 경우 — title 키가 없는 컴포넌트를 본문으로 간주
-            + '          if(!ct&&("title" in comps[ci]||"subTitle" in comps[ci]))continue;'
-            + '          textComp=comps[ci];break;'
-            + '        }'
-            + '        if(textComp){'
-            // HTML → SE3 paragraph[] 변환 후 setDocumentData
-            + '          var div2=iDoc2.createElement("div");div2.innerHTML=h;'
-            + '          var blocks=Array.from(div2.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li"));'
-            + '          if(blocks.length===0){'
-            + '            div2.innerHTML=div2.innerHTML.replace(/<br\\s*\\/?>/gi,"\\n");'
-            + '            blocks=div2.textContent.split("\\n").filter(function(s){return s.trim();}).map(function(s){var el=iDoc2.createElement("p");el.textContent=s;return el;});'
-            + '          }'
-            + '          if(blocks.length===0)blocks=[div2];'
-            + '          var s4=function(){return Math.floor((1+Math.random())*0x10000).toString(16).substring(1);};'
-            + '          var uid=function(){return "SE-"+s4()+s4()+"-"+s4()+"-4"+s4().substr(1)+"-"+(Math.floor(Math.random()*4+8)).toString(16)+s4().substr(1)+"-"+s4()+s4()+s4();};'
-            + '          var newParas=blocks.filter(function(b){return(b.textContent||"").trim();}).map(function(b){'
-            + '            return {id:uid(),nodes:[{id:uid(),value:(b.textContent||"").trim(),"@ctype":"textNode"}],"@ctype":"paragraph"};'
-            + '          });'
-            + '          if(newParas.length===0)newParas=[{id:uid(),nodes:[{id:uid(),value:"","@ctype":"textNode"}],"@ctype":"paragraph"}];'
-            + '          textComp.value=newParas;'
-            + '          ds2.setDocumentData(docData);'
-            + '          document.__caifyResult2="ok_setDocData:paragraphs:"+newParas.length;return;'
-            + '        }'
-            + '        document.__caifyResult2="no_textComp:n="+comps.length+",types=["+compTypes+"]";return;'
-            + '      }'
-            + '      document.__caifyResult2="no_comps:docKeys=["+docKeys+"],preview="+JSON.stringify(docData).substring(0,120);return;'
-            + '    }catch(gdd){document.__caifyResult2="err_getDocData:"+gdd.message;return;}'
-            + '  }'
-            // 방법 2: _papyrus paste 플러그인 (더 많은 이름 시도)
-            + '  if(pap2&&typeof pap2.getPlugin==="function"){'
-            + '    var pasteNames=["paste","Paste","PastePlugin","html","Html","textPlugin","text","RichText","richText","clipboard","Clipboard","pasteHelper","PasteHelper"];'
-            + '    for(var pn=0;pn<pasteNames.length;pn++){'
-            + '      try{'
-            + '        var plugin=pap2.getPlugin(pasteNames[pn]);'
-            + '        if(plugin){'
-            + '          if(typeof plugin.onPaste==="function"){plugin.onPaste({html:h});document.__caifyResult2="ok_plugin_onPaste:"+pasteNames[pn];return;}'
-            + '          if(typeof plugin.paste==="function"){plugin.paste(h);document.__caifyResult2="ok_plugin_paste:"+pasteNames[pn];return;}'
-            + '          if(typeof plugin.insertHtml==="function"){plugin.insertHtml(h);document.__caifyResult2="ok_plugin_insertHtml:"+pasteNames[pn];return;}'
-            + '        }'
-            + '      }catch(ppn){}'
-            + '    }'
-            + '  }'
-            + '  var papBKeys=pap2?Object.getOwnPropertyNames(Object.getPrototypeOf(pap2)).filter(function(k){return k[0]!=="_";}).slice(0,10).join(","):"null";'
-            + '  var ds2Keys=ds2?Object.getOwnPropertyNames(Object.getPrototypeOf(ds2)).filter(function(k){return k[0]!=="_";}).slice(0,10).join(","):"null";'
-            + '  document.__caifyResult2="se3_no_body:pap=["+papBKeys+"],ds2=["+ds2Keys+"]";'
-            + '  return;'
-            + '}'
-            // 2순위: DOM <p> 직접 수정
-            + 'var bodyP=document.querySelector(".se-component.se-text .se-text-paragraph")||document.querySelector(".se-section-text p");'
-            + 'if(!bodyP){document.__caifyResult2="no_body_p";return;}'
-            + 'var allCE2=Array.from(document.querySelectorAll("[contenteditable=true]"));'
-            + 'var seEd2=allCE2.find(function(c){return c.contains(bodyP);})||allCE2[0];'
-            + 'if(seEd2)seEd2.focus();'
-            + 'var sel2=window.getSelection(),r2=document.createRange();'
-            + 'r2.selectNodeContents(bodyP);sel2.removeAllRanges();sel2.addRange(r2);'
-            + 'try{'
-            + '  var dt=new DataTransfer();dt.setData("text/html",h);dt.setData("text/plain","");'
-            + '  bodyP.dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));'
-            + '  document.__caifyResult2="paste_ok";return;'
-            + '}catch(pe){}'
-            + 'bodyP.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertFromPaste"}));'
-            + 'bodyP.innerHTML=h;'
-            + 'bodyP.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertFromPaste"}));'
-            + 'if(seEd2)seEd2.dispatchEvent(new Event("input",{bubbles:true}));'
-            + 'document.__caifyResult2="innerHTML_ok";'
+            + 'if(!textComp){document.__caifyResult2="no_textComp:n="+comps.length;return;}'
+            + 'textComp.value=paras;'
+            + 'ds.setDocumentData(docData);'
+            + 'document.__caifyResult2="ok_setDocData:"+paras.length;'
             + '}catch(e){document.__caifyResult2="err:"+e.message;}'
             + '})();';
           (iDoc2.head || iDoc2.body || iDoc2.documentElement).appendChild(s2);
