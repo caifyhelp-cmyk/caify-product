@@ -24,44 +24,42 @@ class NaverPublisher {
     }
   ''';
 
-  // ── 페이지 진단 (디버그용) ────────────────────────────────────
+  // ── 페이지 진단 ──────────────────────────────────────────────
   static String jsDiagnose() => r'''
     (function() {
-      let doc = document;
-      for (const f of [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe")]) {
-        if (!f) continue;
-        try { const d=f.contentDocument; if(d&&d.querySelector('.se-title-text,.se-section-documentTitle')){doc=d;break;} } catch(e){}
+      const allCe = Array.from(document.querySelectorAll('[contenteditable]'));
+      const ceInfo = allCe.slice(0,4).map(el =>
+        el.tagName + '.' + (el.className||'').split(' ').slice(0,2).join('.').substring(0,20)
+        + '[ph=' + (el.dataset&&el.dataset.placeholder||'').substring(0,10) + ']'
+      ).join('|');
+      // iframe 체크
+      let iframeCe = 0;
+      for (const f of document.querySelectorAll('iframe')) {
+        try { iframeCe += f.contentDocument.querySelectorAll('[contenteditable]').length; } catch(e) {}
       }
-      const titleEl  = doc.querySelector('.se-title-text,.se-section-documentTitle');
-      const bodyEl   = doc.querySelector('.se-module-text,.se-component.se-text,.se-section-text');
-      const titleTxt = titleEl ? (titleEl.innerText||'').substring(0,30) : 'NONE';
-      const bodyTxt  = bodyEl  ? (bodyEl.innerText||'').substring(0,30)  : 'NONE';
-      const ce       = Array.from(doc.querySelectorAll('[contenteditable="true"]')).length;
-      return 'inDoc='+(doc!==document)
-        +' title=['+titleTxt+'] body=['+bodyTxt+'] ce='+ce
-        +' url='+location.href.substring(0,60);
+      return 'ce='+allCe.length+'(if='+iframeCe+') els=['+ceInfo+'] url='+location.pathname.substring(0,40);
     })()
   ''';
 
   // ── 에디터 준비 확인 ─────────────────────────────────────────
-  static String jsIsEditorReady() => '''
+  static String jsIsEditorReady() => r'''
     (function() {
-      $_fw
-      // 1) SE3 클래스 기반 (전통적 방식)
-      const titleEl = _doc.querySelector('.se-title-text,.se-section-documentTitle');
-      const bodyEl  = _doc.querySelector('.se-module-text,.se-component.se-text,.se-section-text');
-      if (titleEl && bodyEl) return 'ready';
+      // DIV[contenteditable] 하나라도 있으면 에디터로 간주
+      // (로그인 페이지는 input 기반이라 DIV contenteditable 없음)
+      const check = (doc) => {
+        const ces = Array.from(doc.querySelectorAll('[contenteditable]'))
+          .filter(el => el.tagName === 'DIV' || el.tagName === 'P');
+        return ces.length;
+      };
 
-      // 2) contenteditable 수 기반 (URL 패턴 미매칭 시 fallback)
-      const ces = _doc.querySelectorAll('[contenteditable="true"]');
-      if (ces.length >= 2) return 'ready_ce:'+ces.length;
-      if (ces.length === 1) {
-        // 본문 영역 하나만 있어도 에디터로 간주 (제목 따로 없는 경우)
-        const hasTitle = !!_doc.querySelector('[data-placeholder*="제목"],[aria-label*="제목"]');
-        if (hasTitle) return 'ready_ce1';
+      let count = check(document);
+      // iframe 안도 확인
+      for (const f of document.querySelectorAll('iframe')) {
+        try { count += check(f.contentDocument); } catch(e) {}
       }
 
-      return 'not_ready:se3title='+!!titleEl+',se3body='+!!bodyEl+',ce='+ces.length+',url='+location.pathname;
+      if (count > 0) return 'ready_div_ce:' + count;
+      return 'not_ready:ce='+count+',url='+location.pathname;
     })()
   ''';
 
