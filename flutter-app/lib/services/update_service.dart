@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'api_service.dart';
 
 const _installChannel = MethodChannel('caify/install');
 
@@ -26,41 +26,46 @@ class UpdateService {
     }
   }
 
-  // ── 버전 정보 fetch ─────────────────────────────────────────
+  // ── 버전 정보 fetch (GitHub Releases API — Render cold start 무관) ──
   static Future<Map<String, dynamic>?> _fetchVersionInfo() async {
-    // 업데이트 체크는 항상 기본 서버(Render)로 — 저장된 URL이 죽어있을 수 있음
-    final base = ApiService.defaultApiBase;
+    try {
+      final res = await http
+          .get(
+            Uri.parse('https://api.github.com/repos/caifyhelp-cmyk/caify-product/releases/latest'),
+            headers: {'Accept': 'application/vnd.github.v3+json'},
+          )
+          .timeout(const Duration(seconds: 15));
 
-    // 백그라운드 체크이므로 넉넉하게 대기 (Render cold start ~30초)
-    http.Response? res;
-    for (int attempt = 0; attempt < 2; attempt++) {
-      try {
-        res = await http
-            .get(Uri.parse('$base/api/version'))
-            .timeout(const Duration(seconds: 30));
-        if (res.statusCode == 200) break;
-      } catch (_) {
-        if (attempt == 1) return null;
-        await Future.delayed(const Duration(seconds: 3));
+      if (res.statusCode != 200) return null;
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final tagName = data['tag_name'] as String? ?? '';
+      if (tagName.isEmpty) return null;
+
+      // "v1.1.5" → "1.1.5"
+      final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+
+      // APK asset URL 찾기
+      final assets = data['assets'] as List? ?? [];
+      String? apkUrl;
+      for (final asset in assets) {
+        final name = (asset['name'] as String? ?? '');
+        if (name.endsWith('.apk')) {
+          apkUrl = asset['browser_download_url'] as String?;
+          break;
+        }
       }
-    }
-    if (res == null || res.statusCode != 200) return null;
+      if (apkUrl == null) return null;
 
-    final body = res.body.trim();
-    // JSON 응답 파싱
-    if (body.startsWith('{')) {
-      final Map<String, dynamic> data = {};
-      // 간단 파싱 (dart:convert import 없이)
-      final vMatch = RegExp(r'"version"\s*:\s*"([^"]+)"').firstMatch(body);
-      final uMatch = RegExp(r'"apk_url"\s*:\s*"([^"]+)"').firstMatch(body);
-      final nMatch = RegExp(r'"notes"\s*:\s*"([^"]*)"').firstMatch(body);
-      if (vMatch == null || uMatch == null) return null;
-      data['version'] = vMatch.group(1)!;
-      data['apk_url'] = uMatch.group(1)!;
-      data['notes']   = nMatch?.group(1) ?? '';
-      return data;
+      final notes = (data['body'] as String? ?? '');
+      return {
+        'version': version,
+        'apk_url': apkUrl,
+        'notes':   notes.length > 120 ? notes.substring(0, 120) : notes,
+      };
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
   // ── 버전 비교 (semantic: major.minor.patch) ─────────────────
