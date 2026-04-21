@@ -67,9 +67,8 @@ class NaverPublisher {
 
   // ── 에디터 준비 확인 ─────────────────────────────────────────
   /// 반환값: 'ready' | 'no_doc:...' | 'not_ready:title=X,body=X'
-  static String jsIsEditorReady() => '''
+  static String jsIsEditorReady() => r'''
     (function() {
-      ${_findDoc.replaceAll('(function _findDoc()', '(function()')}
       const doc = (function() {
         if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
         const frames = [
@@ -86,13 +85,6 @@ class NaverPublisher {
         return null;
       })();
 
-      // 모바일 SE3: input/contenteditable 기반
-      const mobileTitle = document.querySelector('input[placeholder*="제목"]') ||
-                          document.querySelector('textarea[placeholder*="제목"]');
-      const mobileBody  = document.querySelector('[contenteditable="true"]') ||
-                          document.querySelector('textarea:not([placeholder*="제목"])');
-      if (mobileTitle && mobileBody) return 'ready';
-
       if (!doc) {
         const iframes = document.querySelectorAll('iframe');
         return 'no_doc:iframes=' + iframes.length + ',url=' + location.pathname;
@@ -100,7 +92,8 @@ class NaverPublisher {
       const titleEl = doc.querySelector('.se-title-text') ||
                       doc.querySelector('.se-section-documentTitle');
       const bodyEl  = doc.querySelector('.se-component.se-text') ||
-                      doc.querySelector('.se-section-text');
+                      doc.querySelector('.se-section-text') ||
+                      doc.querySelector('[contenteditable="true"]');
       if (titleEl && bodyEl) return 'ready';
       return 'not_ready:title=' + !!titleEl + ',body=' + !!bodyEl;
     })()
@@ -129,26 +122,6 @@ class NaverPublisher {
     final escaped = _escapeJs(title);
     return '''
       (function() {
-        // 방법 A: 모바일 SE3 — input/textarea 기반 제목 필드
-        const inputEl =
-          document.querySelector('input[placeholder*="제목"]') ||
-          document.querySelector('textarea[placeholder*="제목"]') ||
-          document.querySelector('input[id*="title"]') ||
-          document.querySelector('input[name*="title"]');
-        if (inputEl) {
-          inputEl.focus();
-          // React 호환 네이티브 setter
-          const setter = Object.getOwnPropertyDescriptor(
-            Object.getPrototypeOf(inputEl), 'value'
-          )?.set;
-          if (setter) setter.call(inputEl, "$escaped");
-          else inputEl.value = "$escaped";
-          inputEl.dispatchEvent(new Event('input',  { bubbles: true }));
-          inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-          return 'ok_input';
-        }
-
-        // 방법 B: 데스크톱/iframe SE3 — contenteditable
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
         const el =
@@ -158,7 +131,9 @@ class NaverPublisher {
           doc.querySelector('.se-title-text');
         if (!el) return 'no_title_el';
         el.focus();
-        const sel = (doc.defaultView || window).getSelection();
+        // 전체 선택 후 텍스트 교체
+        const win = doc.defaultView || window;
+        const sel = win.getSelection();
         const range = doc.createRange();
         range.selectNodeContents(el);
         sel.removeAllRanges();
@@ -169,7 +144,7 @@ class NaverPublisher {
           el.dispatchEvent(new InputEvent('input', { bubbles: true }));
         }
         el.dispatchEvent(new Event('change', { bubbles: true }));
-        return 'ok_contenteditable';
+        return 'ok';
       })()
     ''';
   }
@@ -181,24 +156,24 @@ class NaverPublisher {
       (function() {
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
+        // SE3 본문 편집 영역 탐색 (데스크톱 SE3)
         const el =
+          doc.querySelector('.se-module-text [contenteditable="true"]') ||
           doc.querySelector('.se-component.se-text .__se-node') ||
           doc.querySelector('.se-section-text .__se-node') ||
           doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
           doc.querySelector('[contenteditable="true"].se-text-paragraph');
         if (!el) return 'no_body_el';
         el.focus();
 
-        // 방법 1: ClipboardEvent paste
+        // 방법 1: ClipboardEvent paste (SE3가 내부 처리)
         try {
           const dt = new DataTransfer();
           dt.setData('text/html', "$escaped");
-          dt.setData('text/plain', '');
-          const pasteOk = el.dispatchEvent(new ClipboardEvent('paste', {
+          dt.setData('text/plain', doc.createElement('div') && (() => { const d=doc.createElement('div'); d.innerHTML="$escaped"; return d.innerText; })());
+          el.dispatchEvent(new ClipboardEvent('paste', {
             clipboardData: dt, bubbles: true, cancelable: true
           }));
-          // 100ms 후 내용 확인 — 비어있으면 방법 2 시도
           return 'paste_dispatched';
         } catch(e) {
           return 'paste_err:' + e.message;
@@ -207,7 +182,7 @@ class NaverPublisher {
     ''';
   }
 
-  // ── 본문 주입 결과 확인 + fallback execCommand ───────────────
+  // ── 본문 주입 결과 확인 + fallback ──────────────────────────
   static String jsInjectHtmlFallback(String html) {
     final escaped = _escapeJs(html);
     return '''
@@ -215,10 +190,10 @@ class NaverPublisher {
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
         const el =
+          doc.querySelector('.se-module-text [contenteditable="true"]') ||
           doc.querySelector('.se-component.se-text .__se-node') ||
           doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph');
+          doc.querySelector('.se-component.se-text [contenteditable]');
         if (!el) return 'no_body_el';
 
         // 이미 내용이 있으면 skip
@@ -226,7 +201,13 @@ class NaverPublisher {
         if (txt.length > 5) return 'already_filled:' + txt.substring(0, 30);
 
         el.focus();
-        // 방법 2: execCommand insertHTML
+        // 방법 2: 전체 선택 후 execCommand insertHTML
+        const win = doc.defaultView || window;
+        const sel = win.getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
         const r2 = doc.execCommand('insertHTML', false, "$escaped");
         if (r2) return 'execCommand_ok';
 

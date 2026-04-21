@@ -62,7 +62,6 @@ class _PublishScreenState extends State<PublishScreen> {
       final urls = [
         WebUri('https://blog.naver.com'),
         WebUri('https://naver.com'),
-        WebUri('https://m.blog.naver.com'),
       ];
       final all = <Map<String, dynamic>>[];
       for (final url in urls) {
@@ -167,17 +166,16 @@ class _PublishScreenState extends State<PublishScreen> {
                 displayZoomControls: false,
                 useWideViewPort: true,
                 userAgent:
-                    'Mozilla/5.0 (Linux; Android 13; SM-G991B) '
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                     'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/120.0.0.0 Mobile Safari/537.36',
+                    'Chrome/120.0.0.0 Safari/537.36',
               ),
               onWebViewCreated: (ctrl) async {
                 _ctrl = ctrl;
                 // 쿠키 먼저 복원 → 그 다음 URL 로드 (로그인 유지)
                 await _restoreNaverCookies();
-                // 모바일 UA → 모바일 에디터 URL 직접 접근
                 await ctrl.loadUrl(urlRequest: URLRequest(
-                  url: WebUri('https://m.blog.naver.com/PostWriteForm.naver'),
+                  url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
                 ));
               },
               onLoadStop: (ctrl, url) async {
@@ -306,7 +304,7 @@ class _PublishScreenState extends State<PublishScreen> {
         await Future.delayed(const Duration(seconds: 2));
         if (_ctrl == null || !mounted) return;
         await _ctrl!.loadUrl(urlRequest: URLRequest(
-          url: WebUri('https://m.blog.naver.com/PostWriteForm.naver'),
+          url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
         ));
       } else {
         // 재시도 후도 에러 → WebView 노출하고 사용자가 직접 이동
@@ -352,7 +350,7 @@ class _PublishScreenState extends State<PublishScreen> {
         debugPrint('[onPageLoaded] 리다이렉트 재시도 $_redirectAttempts');
         await Future.delayed(const Duration(seconds: 1));
         if (_ctrl == null || !mounted) return;
-        const writeUrl = 'https://m.blog.naver.com/PostWriteForm.naver';
+        const writeUrl = 'https://blog.naver.com/GoBlogWrite.naver';
         await _ctrl!.loadUrl(urlRequest: URLRequest(url: WebUri(writeUrl)));
       } else {
         if (mounted) {
@@ -380,7 +378,6 @@ class _PublishScreenState extends State<PublishScreen> {
       final mgr = CookieManager.instance();
       await mgr.deleteCookies(url: WebUri('https://blog.naver.com'));
       await mgr.deleteCookies(url: WebUri('https://naver.com'));
-      await mgr.deleteCookies(url: WebUri('https://m.blog.naver.com'));
       debugPrint('[cookies] 삭제 완료');
     } catch (e) {
       debugPrint('[cookies] 삭제 실패: $e');
