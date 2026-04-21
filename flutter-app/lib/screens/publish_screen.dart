@@ -178,7 +178,19 @@ class _PublishScreenState extends State<PublishScreen> {
                   url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
                 ));
               },
-              onLoadStop: (ctrl, url) => _onPageLoaded(url?.toString() ?? ''),
+              onLoadStop: (ctrl, url) async {
+                final u = url?.toString() ?? '';
+                // 페이지 내용으로 에러 판단 (URL만으로 못 잡는 경우 대비)
+                final bodyText = await ctrl.evaluateJavascript(
+                    source: 'document.body?.innerText?.substring(0,200) ?? ""');
+                final body = bodyText?.toString() ?? '';
+                debugPrint('[loadStop] url=$u body=${body.substring(0, body.length.clamp(0,100))}');
+                if (body.contains('일시적인 오류') || body.contains('서비스에 접속할 수 없')) {
+                  _onPageLoaded('error_page_detected:$u');
+                } else {
+                  _onPageLoaded(u);
+                }
+              },
               onReceivedError: (ctrl, req, err) {
                 if (err.type.toString().contains('ERR_INTERNET_DISCONNECTED')) {
                   _setStatus(PublishState.failed, '인터넷 연결을 확인해 주세요.');
@@ -281,6 +293,20 @@ class _PublishScreenState extends State<PublishScreen> {
     if (url.isEmpty) return;
     debugPrint('[onPageLoaded] $url');
 
+    // Naver 에러 페이지 감지 → 저장된 쿠키 삭제 후 재시도
+    if (_isNaverErrorPage(url)) {
+      debugPrint('[onPageLoaded] Naver 에러 페이지 감지 → 쿠키 삭제 후 재시도');
+      await _clearNaverCookies();
+      _redirectAttempts = 0;
+      _waitingStarted   = false;
+      await Future.delayed(const Duration(seconds: 1));
+      if (_ctrl == null || !mounted) return;
+      await _ctrl!.loadUrl(urlRequest: URLRequest(
+        url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
+      ));
+      return;
+    }
+
     if (NaverPublisher.isLoginUrl(url)) {
       setState(() {
         _state     = PublishState.loginRequired;
@@ -301,7 +327,6 @@ class _PublishScreenState extends State<PublishScreen> {
           _statusMsg = '에디터 로드 중...';
         });
       }
-      // 로그인 성공 후 에디터 진입 → 쿠키 저장
       _saveNaverCookies();
       await _waitForEditor();
       return;
@@ -326,6 +351,28 @@ class _PublishScreenState extends State<PublishScreen> {
           });
         }
       }
+    }
+  }
+
+  bool _isNaverErrorPage(String url) =>
+      url.contains('error.naver.com') ||
+      url.contains('errorPage') ||
+      url.contains('error_page') ||
+      url.contains('serviceError') ||
+      url.startsWith('error_page_detected:');
+
+  // ── 쿠키 삭제 ──────────────────────────────────────────────
+  Future<void> _clearNaverCookies() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefCookieKey);
+      final mgr = CookieManager.instance();
+      await mgr.deleteCookies(url: WebUri('https://blog.naver.com'));
+      await mgr.deleteCookies(url: WebUri('https://naver.com'));
+      await mgr.deleteCookies(url: WebUri('https://m.blog.naver.com'));
+      debugPrint('[cookies] 삭제 완료');
+    } catch (e) {
+      debugPrint('[cookies] 삭제 실패: $e');
     }
   }
 
