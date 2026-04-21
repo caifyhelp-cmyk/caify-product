@@ -21,6 +21,7 @@ class _PublishScreenState extends State<PublishScreen> {
   String _statusMsg      = '에디터 로드 중...';
   bool _waitingStarted   = false;
   int  _redirectAttempts = 0;
+  int  _errorAttempts    = 0;      // 에러 페이지 재시도 횟수 (무한루프 방지)
   bool _showBanner       = true;   // 초록 안내 배너 표시 여부
 
   static const _prefBannerKey    = 'publish_banner_hidden';
@@ -165,10 +166,11 @@ class _PublishScreenState extends State<PublishScreen> {
                 builtInZoomControls: true,
                 displayZoomControls: false,
                 useWideViewPort: true,
+                // 데스크톱 UA — 모바일 UA + 데스크톱 URL 불일치로 인한 에러 방지
                 userAgent:
-                    'Mozilla/5.0 (Linux; Android 13; SM-G991B) '
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                     'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/120.0.0.0 Mobile Safari/537.36',
+                    'Chrome/120.0.0.0 Safari/537.36',
               ),
               onWebViewCreated: (ctrl) async {
                 _ctrl = ctrl;
@@ -293,17 +295,28 @@ class _PublishScreenState extends State<PublishScreen> {
     if (url.isEmpty) return;
     debugPrint('[onPageLoaded] $url');
 
-    // Naver 에러 페이지 감지 → 저장된 쿠키 삭제 후 재시도
+    // Naver 에러 페이지 감지 → 1회만 쿠키 삭제 후 재시도, 이후엔 WebView 노출
     if (_isNaverErrorPage(url)) {
-      debugPrint('[onPageLoaded] Naver 에러 페이지 감지 → 쿠키 삭제 후 재시도');
-      await _clearNaverCookies();
-      _redirectAttempts = 0;
-      _waitingStarted   = false;
-      await Future.delayed(const Duration(seconds: 1));
-      if (_ctrl == null || !mounted) return;
-      await _ctrl!.loadUrl(urlRequest: URLRequest(
-        url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
-      ));
+      debugPrint('[onPageLoaded] 에러 페이지 감지 (시도 $_errorAttempts)');
+      if (_errorAttempts < 1) {
+        _errorAttempts++;
+        await _clearNaverCookies();
+        _redirectAttempts = 0;
+        _waitingStarted   = false;
+        await Future.delayed(const Duration(seconds: 2));
+        if (_ctrl == null || !mounted) return;
+        await _ctrl!.loadUrl(urlRequest: URLRequest(
+          url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
+        ));
+      } else {
+        // 재시도 후도 에러 → WebView 노출하고 사용자가 직접 이동
+        if (mounted) {
+          setState(() {
+            _state     = PublishState.loginRequired;
+            _statusMsg = '네이버 서비스 오류가 발생했습니다.\n직접 글쓰기 화면으로 이동해 주세요.';
+          });
+        }
+      }
       return;
     }
 
@@ -339,9 +352,8 @@ class _PublishScreenState extends State<PublishScreen> {
         debugPrint('[onPageLoaded] 리다이렉트 재시도 $_redirectAttempts');
         await Future.delayed(const Duration(seconds: 1));
         if (_ctrl == null || !mounted) return;
-        final writeUrl = _redirectAttempts == 1
-            ? 'https://blog.naver.com/GoBlogWrite.naver'
-            : 'https://m.blog.naver.com/PostWriteForm.naver';
+        // 데스크톱 UA이므로 데스크톱 에디터 URL 사용
+        final writeUrl = 'https://blog.naver.com/GoBlogWrite.naver';
         await _ctrl!.loadUrl(urlRequest: URLRequest(url: WebUri(writeUrl)));
       } else {
         if (mounted) {
