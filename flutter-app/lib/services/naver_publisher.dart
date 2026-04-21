@@ -351,25 +351,32 @@ class NaverPublisher {
             + 'if(!se3b&&_smb&&Array.isArray(_smb)){se3b=_smb[0]||null;}'
             + 'if(!se3b&&_smb&&typeof _smb.exec==="function"){se3b=_smb;}'
             + 'if(se3b){'
-            // _papyrus 통해 본문 HTML 삽입 (이미지 업로드 포함)
-            + '  var pap2=se3b._papyrus;'
-            + '  if(pap2){'
-            + '    var papBMethods=["insertHtml","pasteHtml","setContent","setHtml","insertContent","paste"];'
-            + '    for(var pb=0;pb<papBMethods.length;pb++){'
-            + '      try{if(typeof pap2[papBMethods[pb]]==="function"){pap2[papBMethods[pb]](h);document.__caifyResult2="ok_pap:"+papBMethods[pb];return;}}catch(pbm){}'
-            + '    }'
-            + '  }'
-            // _documentService 통해 본문 설정
             + '  var ds2=se3b._documentService;'
-            + '  if(ds2){'
-            + '    var dsBMethods=["setContent","setBodyContent","setHtml","insertHtml","setBodyHtml"];'
-            + '    for(var db=0;db<dsBMethods.length;db++){'
-            + '      try{if(typeof ds2[dsBMethods[db]]==="function"){ds2[dsBMethods[db]](h);document.__caifyResult2="ok_ds:"+dsBMethods[db];return;}}catch(dbm){}'
+            + '  var pap2=se3b._papyrus;'
+            // 방법 1: _papyrus paste 플러그인 — 이미지 라이브러리 업로드 가능
+            + '  if(pap2&&typeof pap2.getPlugin==="function"){'
+            + '    var pasteNames=["paste","Paste","PastePlugin","html","Html"];'
+            + '    for(var pn=0;pn<pasteNames.length;pn++){'
+            + '      try{'
+            + '        var plugin=pap2.getPlugin(pasteNames[pn]);'
+            + '        if(plugin){'
+            + '          if(typeof plugin.onPaste==="function"){plugin.onPaste({html:h});document.__caifyResult2="ok_plugin_onPaste:"+pasteNames[pn];return;}'
+            + '          if(typeof plugin.paste==="function"){plugin.paste(h);document.__caifyResult2="ok_plugin_paste:"+pasteNames[pn];return;}'
+            + '          if(typeof plugin.insertHtml==="function"){plugin.insertHtml(h);document.__caifyResult2="ok_plugin_insertHtml:"+pasteNames[pn];return;}'
+            + '        }'
+            + '      }catch(ppn){}'
             + '    }'
             + '  }'
-            + '  var papBKeys=pap2?Object.getOwnPropertyNames(Object.getPrototypeOf(pap2)).filter(function(k){return k[0]!=="_";}).join(","):"null";'
-            + '  var dsBKeys=ds2?Object.getOwnPropertyNames(Object.getPrototypeOf(ds2)).filter(function(k){return k[0]!=="_";}).join(","):"null";'
-            + '  document.__caifyResult2="se3_no_body:pap=["+papBKeys+"],ds=["+dsBKeys+"]";'
+            // 방법 2: _documentService.setDocumentData
+            + '  if(ds2&&typeof ds2.setDocumentData==="function"){'
+            + '    try{ds2.setDocumentData(h);document.__caifyResult2="ok_ds:setDocumentData";return;}catch(dd){}'
+            + '  }'
+            // 방법 3: _documentService.setComponentList (HTML을 컴포넌트로)
+            + '  if(ds2&&typeof ds2.setComponentList==="function"){'
+            + '    try{ds2.setComponentList([{type:"text",html:h}]);document.__caifyResult2="ok_ds:setComponentList";return;}catch(cl){}'
+            + '  }'
+            + '  var papBKeys=pap2?Object.getOwnPropertyNames(Object.getPrototypeOf(pap2)).filter(function(k){return k[0]!=="_";}).slice(0,10).join(","):"null";'
+            + '  document.__caifyResult2="se3_no_body:pap=["+papBKeys+"]";'
             + '  return;'
             + '}'
             // 2순위: DOM <p> 직접 수정
@@ -411,19 +418,45 @@ class NaverPublisher {
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
-        const doc = $_docFinder;
-        if (!doc) return 'no_doc';
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+
+        // 방법 A: _tagService API (SE3 내부)
+        const sm = inMain ? window.SmartEditor : (iframe?.contentWindow?.SmartEditor);
+        if (sm && sm._editors) {
+          const ed = Object.values(sm._editors)[0];
+          const ts = ed?._tagService;
+          if (ts) {
+            const tagMethods = ['addTag','addTags','setTags','insertTag'];
+            for (const m of tagMethods) {
+              if (typeof ts[m] === 'function') {
+                try {
+                  for (const tag of [$tagsJson]) { ts[m](tag); }
+                  return 'ok_tagService:' + m;
+                } catch(e) {}
+              }
+            }
+            // 태그 서비스 메서드 목록 반환
+            const tsMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(ts)).filter(k=>k[0]!=='_').join(',');
+            return 'no_tag_method:[' + tsMethods + ']';
+          }
+        }
+
+        // 방법 B: DOM input 탐색
+        const doc = iDoc || document;
         const tagInput =
           doc.querySelector('input.se-tag-input') ||
           doc.querySelector('input[placeholder*="태그"]') ||
           doc.querySelector('[class*="tag"] input') ||
-          doc.querySelector('.se-tag-field input') ||
-          doc.querySelector('input[type="text"][class*="tag"]');
+          doc.querySelector('.se-tag-field input');
         if (!tagInput) return 'no_tag_input';
 
         tagInput.focus();
         for (const tag of [$tagsJson]) {
-          // React 호환 value setter
           const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(tagInput), 'value')?.set;
           if (setter) setter.call(tagInput, tag);
           else tagInput.value = tag;
@@ -432,7 +465,7 @@ class NaverPublisher {
           tagInput.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', keyCode: 13, bubbles: true }));
           tagInput.value = '';
         }
-        return 'ok';
+        return 'ok_dom';
       })()
     ''';
   }
