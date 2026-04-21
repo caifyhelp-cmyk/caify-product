@@ -324,6 +324,9 @@ class NaverPublisher {
         doc.querySelector('button[class*="tempSave"]') ||
         Array.from(doc.querySelectorAll('button')).find(b =>
           (b.innerText||'').trim() === '임시저장'
+        ) ||
+        Array.from(doc.querySelectorAll('button')).find(b =>
+          (b.innerText||'').trim() === '저장'
         );
       if (!btn) {
         const all = Array.from(doc.querySelectorAll('button'))
