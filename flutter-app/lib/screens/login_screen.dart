@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/update_service.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,6 +19,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // 로고 탭 카운터 (5번 탭 → 서버 설정)
   int _logoTapCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 로그인 화면 진입 후 업데이트 체크 (백그라운드)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.checkAndPrompt(context);
+    });
+  }
 
   @override
   void dispose() {

@@ -28,17 +28,17 @@ class UpdateService {
     // 업데이트 체크는 항상 기본 서버(Render)로 — 저장된 URL이 죽어있을 수 있음
     final base = ApiService.defaultApiBase;
 
-    // Render 무료 플랜 cold start 최대 ~30초 → 재시도 포함
+    // 백그라운드 체크이므로 넉넉하게 대기 (Render cold start ~30초)
     http.Response? res;
-    for (int attempt = 0; attempt < 3; attempt++) {
+    for (int attempt = 0; attempt < 2; attempt++) {
       try {
         res = await http
             .get(Uri.parse('$base/api/version'))
-            .timeout(const Duration(seconds: 15));
+            .timeout(const Duration(seconds: 30));
         if (res.statusCode == 200) break;
       } catch (_) {
-        if (attempt == 2) return null;
-        await Future.delayed(const Duration(seconds: 5));
+        if (attempt == 1) return null;
+        await Future.delayed(const Duration(seconds: 3));
       }
     }
     if (res == null || res.statusCode != 200) return null;

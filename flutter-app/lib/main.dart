@@ -44,10 +44,7 @@ class _SplashRouterState extends State<_SplashRouter> {
   }
 
   Future<void> _route() async {
-    // 업데이트 체크 (로그인 여부와 관계없이 먼저 실행)
-    await UpdateService.checkAndPrompt(context);
-
-    if (!mounted) return;
+    // 업데이트 체크는 화면 전환 후 백그라운드에서 — 스플래시 블로킹 방지
     final loggedIn = await ApiService.isLoggedIn();
     if (!mounted) return;
     if (loggedIn) {

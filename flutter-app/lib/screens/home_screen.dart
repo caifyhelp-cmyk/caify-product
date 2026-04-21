@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'chat_screen.dart';
 import 'post_list_screen.dart';
 import 'settings_screen.dart';
+import '../services/update_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,6 +13,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 홈 화면 진입 후 업데이트 체크 (백그라운드 — UI 블로킹 없음)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.checkAndPrompt(context);
+    });
+  }
 
   static const _pages = <Widget>[
     ChatScreen(),
