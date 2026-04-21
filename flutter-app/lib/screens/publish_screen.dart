@@ -4,6 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
 import '../services/naver_publisher.dart';
+import '../services/app_logger.dart';
 
 enum PublishState { loading, loginRequired, injecting, saving, editorReady, failed }
 
@@ -80,10 +81,10 @@ class _PublishScreenState extends State<PublishScreen> {
       if (all.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_prefCookieKey, jsonEncode(all));
-        debugPrint('[cookies] ${all.length}개 저장됨');
+        AppLogger.log('publish','[cookies] ${all.length}개 저장됨');
       }
     } catch (e) {
-      debugPrint('[cookies] 저장 실패: $e');
+      AppLogger.log('publish','[cookies] 저장 실패: $e');
     }
   }
 
@@ -105,9 +106,9 @@ class _PublishScreenState extends State<PublishScreen> {
           isSecure: c['isSecure'] as bool? ?? true,
         );
       }
-      debugPrint('[cookies] ${list.length}개 복원됨');
+      AppLogger.log('publish','[cookies] ${list.length}개 복원됨');
     } catch (e) {
-      debugPrint('[cookies] 복원 실패: $e');
+      AppLogger.log('publish','[cookies] 복원 실패: $e');
     }
   }
 
@@ -184,7 +185,7 @@ class _PublishScreenState extends State<PublishScreen> {
                 final bodyText = await ctrl.evaluateJavascript(
                     source: 'document.body?.innerText?.substring(0,200) ?? ""');
                 final body = bodyText?.toString() ?? '';
-                debugPrint('[loadStop] url=$u body=${body.substring(0, body.length.clamp(0,100))}');
+                AppLogger.log('publish','[loadStop] url=$u body=${body.substring(0, body.length.clamp(0,100))}');
                 if (body.contains('일시적인 오류') || body.contains('서비스에 접속할 수 없')) {
                   _onPageLoaded('error_page_detected:$u');
                 } else {
@@ -291,11 +292,11 @@ class _PublishScreenState extends State<PublishScreen> {
   // ── 페이지 로드 핸들러 ─────────────────────────────────────
   Future<void> _onPageLoaded(String url) async {
     if (url.isEmpty) return;
-    debugPrint('[onPageLoaded] $url');
+    AppLogger.log('publish','[onPageLoaded] $url');
 
     // Naver 에러 페이지 감지 → 1회만 쿠키 삭제 후 재시도, 이후엔 WebView 노출
     if (_isNaverErrorPage(url)) {
-      debugPrint('[onPageLoaded] 에러 페이지 감지 (시도 $_errorAttempts)');
+      AppLogger.log('publish','[onPageLoaded] 에러 페이지 감지 (시도 $_errorAttempts)');
       if (_errorAttempts < 1) {
         _errorAttempts++;
         await _clearNaverCookies();
@@ -343,7 +344,7 @@ class _PublishScreenState extends State<PublishScreen> {
     // isEditorUrl 미매칭 naver.com 페이지
     // → SE3 JS 초기화 시간 필요 → 3초 대기 후 _waitForEditor로 진입
     if (url.contains('naver.com') && !_waitingStarted) {
-      debugPrint('[onPageLoaded] non-editor url, waiting 3s for SE3 init...');
+      AppLogger.log('publish','[onPageLoaded] non-editor url, waiting 3s for SE3 init...');
       _waitingStarted = true;
       _redirectAttempts = 0;
       _saveNaverCookies();
@@ -369,39 +370,42 @@ class _PublishScreenState extends State<PublishScreen> {
       final mgr = CookieManager.instance();
       await mgr.deleteCookies(url: WebUri('https://blog.naver.com'));
       await mgr.deleteCookies(url: WebUri('https://naver.com'));
-      debugPrint('[cookies] 삭제 완료');
+      AppLogger.log('publish','[cookies] 삭제 완료');
     } catch (e) {
-      debugPrint('[cookies] 삭제 실패: $e');
+      AppLogger.log('publish','[cookies] 삭제 실패: $e');
     }
   }
 
   // ── 에디터 준비 대기 ───────────────────────────────────────
   Future<void> _waitForEditor() async {
     String lastResult = '';
-    String lastDiag   = '';
+    AppLogger.log('editor', '에디터 대기 시작');
     for (int i = 0; i < 60; i++) {
       await Future.delayed(const Duration(seconds: 1));
       if (_ctrl == null || !mounted) return;
 
-      // 매 5초마다 진단 + 화면에 표시 (사용자가 스크린샷으로 확인 가능)
-      if (i % 5 == 0) {
-        lastDiag = _jsStr(await _ctrl!.evaluateJavascript(
-            source: NaverPublisher.jsDiagnose()));
-        _setStatus(PublishState.loading,
-            '에디터 로드 중... (${i}s)\n$lastDiag');
-      }
-
       final raw = await _ctrl!.evaluateJavascript(
           source: NaverPublisher.jsIsEditorReady());
       lastResult = _jsStr(raw);
+      AppLogger.log('ready[$i]', lastResult);
+
+      // 매 5초마다 상세 진단
+      if (i % 5 == 0) {
+        final diag = _jsStr(await _ctrl!.evaluateJavascript(
+            source: NaverPublisher.jsDiagnose()));
+        AppLogger.log('diag[$i]', diag);
+        _setStatus(PublishState.loading, '에디터 로드 중... (${i}s)\n$diag');
+      }
 
       if (lastResult.startsWith('ready')) {
+        AppLogger.log('editor', '준비 완료: $lastResult');
         await _doInjectAndTempSave();
         return;
       }
     }
     final finalDiag = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsDiagnose()));
+    AppLogger.log('editor', '타임아웃 | ready=$lastResult | diag=$finalDiag');
     _setStatus(PublishState.failed, '타임아웃\nready체크: $lastResult\n진단: $finalDiag');
   }
 
@@ -413,27 +417,27 @@ class _PublishScreenState extends State<PublishScreen> {
     _setStatus(PublishState.injecting, '제목 입력 중...');
     final titleResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectTitle(widget.post.title)));
-    debugPrint('[inject_title] $titleResult');
+    AppLogger.log('publish','[inject_title] $titleResult');
     await Future.delayed(const Duration(milliseconds: 500));
 
     // 본문 주입 (실패해도 계속 진행)
     _setStatus(PublishState.injecting, '본문 입력 중...');
     final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtml(widget.post.html)));
-    debugPrint('[inject_body] $bodyResult');
+    AppLogger.log('publish','[inject_body] $bodyResult');
 
     // 2초 후 fallback (paste가 안 됐을 경우 execCommand/innerHTML 시도)
     await Future.delayed(const Duration(seconds: 2));
     final fallbackResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtmlFallback(widget.post.html)));
-    debugPrint('[inject_body_fallback] $fallbackResult');
+    AppLogger.log('publish','[inject_body_fallback] $fallbackResult');
 
     // 태그 주입 (실패해도 계속 진행)
     if (widget.post.tags.isNotEmpty) {
       _setStatus(PublishState.injecting, '태그 입력 중...');
       final tagResult = _jsStr(await _ctrl!.evaluateJavascript(
           source: NaverPublisher.jsAddTags(widget.post.tags)));
-      debugPrint('[inject_tags] $tagResult');
+      AppLogger.log('publish','[inject_tags] $tagResult');
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
@@ -441,7 +445,7 @@ class _PublishScreenState extends State<PublishScreen> {
     _setStatus(PublishState.saving, '임시저장 중...');
     final saveResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsClickTempSave()));
-    debugPrint('[temp_save] $saveResult');
+    AppLogger.log('publish','[temp_save] $saveResult');
 
     await Future.delayed(const Duration(seconds: 1));
 
@@ -466,7 +470,7 @@ class _PublishScreenState extends State<PublishScreen> {
     if (_ctrl == null) return;
     final result = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsClickPublish()));
-    debugPrint('[publish_btn] $result');
+    AppLogger.log('publish','[publish_btn] $result');
     if (result != 'ok' && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
