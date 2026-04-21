@@ -36,8 +36,17 @@ jobs:
         working-directory: flutter-app
         run: flutter pub get
 
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > flutter-app/android/app/caify-release.jks
+
       - name: Build APK (release)
         working-directory: flutter-app
+        env:
+          KEYSTORE_PATH: caify-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build apk --release
 
       # ── 버전 읽기 (pubspec.yaml → 1.0.0+1 → v1.0.0) ──────────
