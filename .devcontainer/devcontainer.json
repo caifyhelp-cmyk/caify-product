@@ -1,0 +1,26 @@
+{
+  "name": "Caify Dev",
+  "image": "ghcr.io/cirruslabs/flutter:3.24.0",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "postCreateCommand": "cd flutter-app && flutter pub get && cd ../mock-server && npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.dart-code",
+        "Dart-Code.flutter",
+        "dbaeumer.vscode-eslint"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "dart.flutterSdkPath": "/sdks/flutter"
+      }
+    }
+  },
+  "forwardPorts": [3030],
+  "portsAttributes": {
+    "3030": { "label": "Mock Server", "onAutoForward": "notify" }
+  }
+}
