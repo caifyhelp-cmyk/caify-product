@@ -1,21 +1,89 @@
 /// Naver Smart Editor 3 자동화 JS 스니펫 모음
-/// flutter_inappwebview의 evaluateJavascript()로 메인 프레임에서 실행
-/// → iframe[name='mainFrame'].contentDocument 접근 (same-origin)
+/// flutter_inappwebview의 evaluateJavascript()로 실행
+/// 메인 도큐먼트 + mainFrame iframe 양쪽 자동 탐지
 library naver_publisher;
 
 class NaverPublisher {
-  // ── 에디터 준비 확인 ─────────────────────────────────────────
-  /// 반환값: 'ready' | 'not_ready' | 'no_iframe'
-  static String jsIsEditorReady() => r'''
+
+  // ── 공통: 에디터 도큐먼트 탐지 헬퍼 ─────────────────────────────
+  /// 메인 doc → mainFrame iframe → 첫 번째 iframe 순서로 탐색
+  static const String _findDoc = r'''
+    (function _findDoc() {
+      // 1) 메인 도큐먼트에 SE 엘리먼트가 있으면 그대로 사용
+      if (document.querySelector('.se-title-text, .se-section-documentTitle')) {
+        return document;
+      }
+      // 2) mainFrame iframe
+      const frames = [
+        document.querySelector("iframe[name='mainFrame']"),
+        document.querySelector("iframe#mainFrame"),
+        document.querySelector("iframe"),
+      ];
+      for (const f of frames) {
+        if (!f) continue;
+        let d;
+        try { d = f.contentDocument; } catch(e) { continue; }
+        if (d && d.querySelector('.se-title-text, .se-section-documentTitle')) return d;
+      }
+      return null;
+    })()
+  ''';
+
+  // ── 페이지 진단 (디버그용) ────────────────────────────────────
+  /// 현재 페이지 구조를 문자열로 반환
+  static String jsDiagnose() => r'''
     (function() {
-      const iframe = document.querySelector("iframe[name='mainFrame']");
-      if (!iframe || !iframe.contentDocument) return 'no_iframe';
-      const doc = iframe.contentDocument;
+      const iframes = Array.from(document.querySelectorAll('iframe'));
+      const iframeInfo = iframes.map(f => {
+        let docInfo = 'no_access';
+        try {
+          const d = f.contentDocument;
+          if (d) {
+            const title = d.querySelector('.se-title-text, .se-section-documentTitle');
+            const body  = d.querySelector('.se-component.se-text, .se-section-text');
+            docInfo = `title=${!!title},body=${!!body}`;
+          }
+        } catch(e) { docInfo = 'cors'; }
+        return `${f.name||f.id||'?'}[${docInfo}]`;
+      }).join('|');
+
+      const mainTitle = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+      const mainBody  = !!document.querySelector('.se-component.se-text,.se-section-text');
+      return `main[title=${mainTitle},body=${mainBody}] iframes=[${iframeInfo}] url=${location.href.substring(0,80)}`;
+    })()
+  ''';
+
+  // ── 에디터 준비 확인 ─────────────────────────────────────────
+  /// 반환값: 'ready' | 'no_doc:...' | 'not_ready:title=X,body=X'
+  static String jsIsEditorReady() => '''
+    (function() {
+      ${_findDoc.replaceAll('(function _findDoc()', '(function()')}
+      const doc = (function() {
+        if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+        const frames = [
+          document.querySelector("iframe[name='mainFrame']"),
+          document.querySelector("iframe#mainFrame"),
+          document.querySelector("iframe"),
+        ];
+        for (const f of frames) {
+          if (!f) continue;
+          let d;
+          try { d = f.contentDocument; } catch(e) { continue; }
+          if (d && d.querySelector('.se-title-text, .se-section-documentTitle')) return d;
+        }
+        return null;
+      })();
+
+      if (!doc) {
+        const iframes = document.querySelectorAll('iframe');
+        return 'no_doc:iframes=' + iframes.length + ',url=' + location.pathname;
+      }
       const titleEl = doc.querySelector('.se-title-text') ||
                       doc.querySelector('.se-section-documentTitle');
       const bodyEl  = doc.querySelector('.se-component.se-text') ||
                       doc.querySelector('.se-section-text');
-      return (titleEl && bodyEl) ? 'ready' : 'not_ready';
+      if (titleEl && bodyEl) return 'ready';
+      return 'not_ready:title=' + !!titleEl + ',body=' + !!bodyEl;
     })()
   ''';
 
@@ -24,9 +92,13 @@ class NaverPublisher {
     final escaped = _escapeJs(title);
     return '''
       (function() {
-        const iframe = document.querySelector("iframe[name='mainFrame']");
-        if (!iframe || !iframe.contentDocument) return 'no_iframe';
-        const doc = iframe.contentDocument;
+        const doc = (function() {
+          if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+          const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+          for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+          return null;
+        })();
+        if (!doc) return 'no_doc';
         const el =
           doc.querySelector('.se-title-text .se-text-paragraph') ||
           doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
@@ -46,9 +118,13 @@ class NaverPublisher {
     final escaped = _escapeJs(html);
     return '''
       (function() {
-        const iframe = document.querySelector("iframe[name='mainFrame']");
-        if (!iframe || !iframe.contentDocument) return 'no_iframe';
-        const doc = iframe.contentDocument;
+        const doc = (function() {
+          if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+          const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+          for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+          return null;
+        })();
+        if (!doc) return 'no_doc';
         const el =
           doc.querySelector('.se-component.se-text .__se-node') ||
           doc.querySelector('.se-section-text .__se-node') ||
@@ -67,16 +143,18 @@ class NaverPublisher {
   }
 
   // ── 태그 입력 ────────────────────────────────────────────────
-  /// 태그 목록을 에디터 태그 입력창에 삽입
-  /// 반환값: 'ok' | 'no_tag_input'
   static String jsAddTags(List<String> tags) {
     if (tags.isEmpty) return '"ok"';
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
-        const iframe = document.querySelector("iframe[name='mainFrame']");
-        if (!iframe || !iframe.contentDocument) return 'no_iframe';
-        const doc = iframe.contentDocument;
+        const doc = (function() {
+          if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+          const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+          for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+          return null;
+        })();
+        if (!doc) return 'no_doc';
         const tagInput =
           doc.querySelector('input.se-tag-input') ||
           doc.querySelector('input[placeholder*="태그"]') ||
@@ -97,13 +175,15 @@ class NaverPublisher {
   }
 
   // ── 임시저장 버튼 클릭 ───────────────────────────────────────
-  /// 에디터 상단 '임시저장' 버튼 클릭 후 멈춤 (발행은 고객이 직접)
-  /// 반환값: 'ok' | 'no_save_btn|<button_list>'
   static String jsClickTempSave() => r'''
     (function() {
-      const iframe = document.querySelector("iframe[name='mainFrame']");
-      if (!iframe || !iframe.contentDocument) return 'no_iframe';
-      const doc = iframe.contentDocument;
+      const doc = (function() {
+        if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+        const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+        for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+        return null;
+      })();
+      if (!doc) return 'no_doc';
       const btn =
         doc.querySelector('button[class*="temp_save"]') ||
         doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
@@ -114,6 +194,7 @@ class NaverPublisher {
       if (!btn) {
         const all = Array.from(doc.querySelectorAll('button'))
           .map(b => (b.innerText||'').trim().substring(0,15))
+          .filter(t => t)
           .join(',');
         return 'no_save_btn|' + all;
       }

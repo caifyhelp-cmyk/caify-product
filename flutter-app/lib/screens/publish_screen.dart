@@ -184,17 +184,33 @@ class _PublishScreenState extends State<PublishScreen> {
 
   // ── 에디터 준비 대기 ───────────────────────────────────────
   Future<void> _waitForEditor() async {
-    for (int i = 0; i < 30; i++) {
+    String lastResult = '';
+    for (int i = 0; i < 60; i++) {
       await Future.delayed(const Duration(seconds: 1));
       if (_ctrl == null || !mounted) return;
+
+      // 5초마다 전체 진단 로그
+      if (i % 5 == 0) {
+        final diag = _jsStr(await _ctrl!.evaluateJavascript(
+            source: NaverPublisher.jsDiagnose()));
+        debugPrint('[editor diag $i] $diag');
+      }
+
       final raw = await _ctrl!.evaluateJavascript(
           source: NaverPublisher.jsIsEditorReady());
-      if (_jsStr(raw) == 'ready') {
+      lastResult = _jsStr(raw);
+      debugPrint('[editor check $i] $lastResult');
+
+      if (lastResult == 'ready') {
         await _doInjectAndTempSave();
         return;
       }
     }
-    _setStatus(PublishState.failed, '에디터 로드 타임아웃\n앱을 다시 시도해 주세요.');
+    // 마지막 진단 포함해서 오류 표시
+    final finalDiag = _jsStr(await _ctrl!.evaluateJavascript(
+        source: NaverPublisher.jsDiagnose()));
+    _setStatus(PublishState.failed,
+        '에디터 로드 타임아웃\n$lastResult\n$finalDiag');
   }
 
   // ── 주입 + 임시저장 ────────────────────────────────────────
