@@ -1,7 +1,7 @@
 name: caify_flutter
 description: Caify 블로그 자동화 앱
 publish_to: 'none'
-version: 1.3.6+37
+version: 1.3.7+38
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
