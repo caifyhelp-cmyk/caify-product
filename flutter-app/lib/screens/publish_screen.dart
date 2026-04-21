@@ -1,20 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
-import '../services/api_service.dart';
 import '../services/naver_publisher.dart';
 
-// ready       : 에디터 로드 중
-// loginRequired: 네이버 로그인 필요 — WebView 노출
-// injecting   : 제목/본문/태그 입력 중
-// saving      : 임시저장 중
-// editorReady : 임시저장 완료 — 에디터 고객에게 노출, 발행은 직접
-// failed      : 오류
 enum PublishState { loading, loginRequired, injecting, saving, editorReady, failed }
 
 class PublishScreen extends StatefulWidget {
   final Post post;
-
   const PublishScreen({super.key, required this.post});
 
   @override
@@ -23,10 +17,14 @@ class PublishScreen extends StatefulWidget {
 
 class _PublishScreenState extends State<PublishScreen> {
   InAppWebViewController? _ctrl;
-  PublishState _state = PublishState.loading;
-  String _statusMsg   = '에디터 로드 중...';
-  bool _waitingStarted = false;
-  int _redirectAttempts = 0;
+  PublishState _state    = PublishState.loading;
+  String _statusMsg      = '에디터 로드 중...';
+  bool _waitingStarted   = false;
+  int  _redirectAttempts = 0;
+  bool _showBanner       = true;   // 초록 안내 배너 표시 여부
+
+  static const _prefBannerKey    = 'publish_banner_hidden';
+  static const _prefCookieKey    = 'naver_cookies_v1';
 
   static String _jsStr(dynamic r) => r?.toString() ?? '';
 
@@ -34,12 +32,92 @@ class _PublishScreenState extends State<PublishScreen> {
       _state == PublishState.loginRequired ||
       _state == PublishState.editorReady;
 
+  // ── 초기화 ────────────────────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hidden = prefs.getBool(_prefBannerKey) ?? false;
+    if (hidden && mounted) setState(() => _showBanner = false);
+  }
+
+  // ── 배너 닫기 ──────────────────────────────────────────────
+  void _closeBanner({bool neverShow = false}) async {
+    setState(() => _showBanner = false);
+    if (neverShow) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefBannerKey, true);
+    }
+  }
+
+  // ── 네이버 쿠키 저장 ──────────────────────────────────────
+  Future<void> _saveNaverCookies() async {
+    try {
+      final mgr = CookieManager.instance();
+      final urls = [
+        WebUri('https://blog.naver.com'),
+        WebUri('https://naver.com'),
+        WebUri('https://m.blog.naver.com'),
+      ];
+      final all = <Map<String, dynamic>>[];
+      for (final url in urls) {
+        final cookies = await mgr.getCookies(url: url);
+        for (final c in cookies) {
+          all.add({
+            'url': url.toString(),
+            'name': c.name,
+            'value': c.value,
+            'domain': c.domain ?? '',
+            'path': c.path ?? '/',
+            'isSecure': c.isSecure ?? true,
+          });
+        }
+      }
+      if (all.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefCookieKey, jsonEncode(all));
+        debugPrint('[cookies] ${all.length}개 저장됨');
+      }
+    } catch (e) {
+      debugPrint('[cookies] 저장 실패: $e');
+    }
+  }
+
+  // ── 네이버 쿠키 복원 ──────────────────────────────────────
+  Future<void> _restoreNaverCookies() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_prefCookieKey);
+      if (saved == null) return;
+      final mgr  = CookieManager.instance();
+      final list = List<Map<String, dynamic>>.from(jsonDecode(saved));
+      for (final c in list) {
+        await mgr.setCookie(
+          url:      WebUri(c['url'] as String),
+          name:     c['name']   as String,
+          value:    c['value']  as String,
+          domain:   c['domain'] as String,
+          path:     c['path']   as String,
+          isSecure: c['isSecure'] as bool? ?? true,
+        );
+      }
+      debugPrint('[cookies] ${list.length}개 복원됨');
+    } catch (e) {
+      debugPrint('[cookies] 복원 실패: $e');
+    }
+  }
+
+  // ── UI ────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _state == PublishState.editorReady ? '내용 확인 후 발행 버튼 누르세요' : '발행 준비 중',
+          _state == PublishState.editorReady ? '내용 확인 후 발행하세요' : '발행 준비 중',
           style: const TextStyle(fontSize: 14),
         ),
         backgroundColor: Colors.white,
@@ -75,13 +153,10 @@ class _PublishScreenState extends State<PublishScreen> {
       ),
       body: Stack(
         children: [
-          // WebView — 로그인 필요 시 또는 임시저장 완료 후 표시
+          // WebView
           Opacity(
             opacity: _showWebView ? 1.0 : 0.0,
             child: InAppWebView(
-              initialUrlRequest: URLRequest(
-                url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
-              ),
               initialSettings: InAppWebViewSettings(
                 javaScriptEnabled: true,
                 domStorageEnabled: true,
@@ -95,7 +170,14 @@ class _PublishScreenState extends State<PublishScreen> {
                     'AppleWebKit/537.36 (KHTML, like Gecko) '
                     'Chrome/120.0.0.0 Mobile Safari/537.36',
               ),
-              onWebViewCreated: (ctrl) => _ctrl = ctrl,
+              onWebViewCreated: (ctrl) async {
+                _ctrl = ctrl;
+                // 쿠키 먼저 복원 → 그 다음 URL 로드 (로그인 유지)
+                await _restoreNaverCookies();
+                await ctrl.loadUrl(urlRequest: URLRequest(
+                  url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
+                ));
+              },
               onLoadStop: (ctrl, url) => _onPageLoaded(url?.toString() ?? ''),
               onReceivedError: (ctrl, req, err) {
                 if (err.type.toString().contains('ERR_INTERNET_DISCONNECTED')) {
@@ -104,28 +186,44 @@ class _PublishScreenState extends State<PublishScreen> {
               },
             ),
           ),
-          // 오버레이 — 진행 중 / 오류 화면
+          // 로딩/오류 오버레이
           if (!_showWebView) _buildOverlay(),
 
-          // 임시저장 완료 안내 배너 (에디터 위에 표시)
-          if (_state == PublishState.editorReady)
+          // 초록 안내 배너 (X 닫기 + 다시는 보지 않기)
+          if (_state == PublishState.editorReady && _showBanner)
             Positioned(
               top: 0, left: 0, right: 0,
-              child: Container(
+              child: Material(
                 color: const Color(0xFF03C75A),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 10),
-                child: const Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '내용이 입력됐습니다. 확인 후 오른쪽 위 발행 버튼을 눌러주세요.',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.white, size: 16),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '내용이 입력됐습니다. 오른쪽 위 발행하기를 누르세요.',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
                       ),
-                    ),
-                  ],
+                      // 다시는 보지 않기
+                      GestureDetector(
+                        onTap: () => _closeBanner(neverShow: true),
+                        child: const Text('다시 보지 않기',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 11,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.white70)),
+                      ),
+                      const SizedBox(width: 8),
+                      // X 닫기
+                      GestureDetector(
+                        onTap: () => _closeBanner(),
+                        child: const Icon(Icons.close, color: Colors.white, size: 18),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -136,7 +234,6 @@ class _PublishScreenState extends State<PublishScreen> {
 
   Widget _buildOverlay() {
     final isError = _state == PublishState.failed;
-
     return Container(
       color: Colors.white,
       child: Center(
@@ -154,9 +251,8 @@ class _PublishScreenState extends State<PublishScreen> {
                 _statusMsg,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 16,
-                  color: isError ? Colors.red : Colors.black87,
-                ),
+                    fontSize: 16,
+                    color: isError ? Colors.red : Colors.black87),
               ),
               if (isError) ...[
                 const SizedBox(height: 32),
@@ -187,48 +283,45 @@ class _PublishScreenState extends State<PublishScreen> {
 
     if (NaverPublisher.isLoginUrl(url)) {
       setState(() {
-        _state      = PublishState.loginRequired;
-        _statusMsg  = '네이버 로그인이 필요합니다.\n로그인 후 자동으로 진행됩니다.';
+        _state     = PublishState.loginRequired;
+        _statusMsg = '네이버 로그인이 필요합니다.\n로그인 후 자동으로 진행됩니다.';
       });
-      _waitingStarted = false;
+      _waitingStarted   = false;
       _redirectAttempts = 0;
       return;
     }
 
-    // 에디터 URL일 때만 자동화 시작
     if (NaverPublisher.isEditorUrl(url)) {
       if (_waitingStarted) return;
-      _waitingStarted = true;
+      _waitingStarted   = true;
       _redirectAttempts = 0;
-
       if (_state == PublishState.loginRequired) {
         setState(() {
           _state     = PublishState.loading;
           _statusMsg = '에디터 로드 중...';
         });
       }
+      // 로그인 성공 후 에디터 진입 → 쿠키 저장
+      _saveNaverCookies();
       await _waitForEditor();
       return;
     }
 
-    // 에디터가 아닌 네이버 페이지로 리다이렉트된 경우 재시도
+    // 에디터가 아닌 네이버 페이지 → 재시도
     if (url.contains('naver.com') && !_waitingStarted) {
       if (_redirectAttempts < 2) {
         _redirectAttempts++;
-        debugPrint('[onPageLoaded] 에디터가 아닌 페이지로 리다이렉트, 재시도 $_redirectAttempts');
+        debugPrint('[onPageLoaded] 리다이렉트 재시도 $_redirectAttempts');
         await Future.delayed(const Duration(seconds: 1));
         if (_ctrl == null || !mounted) return;
-        // 1차: 데스크톱 쓰기 URL, 2차: 모바일 쓰기 URL
         final writeUrl = _redirectAttempts == 1
             ? 'https://blog.naver.com/GoBlogWrite.naver'
             : 'https://m.blog.naver.com/PostWriteForm.naver';
         await _ctrl!.loadUrl(urlRequest: URLRequest(url: WebUri(writeUrl)));
       } else {
-        // 2번 재시도 후도 에디터 미진입 → WebView 노출해서 사용자가 직접 이동 가능하게
-        debugPrint('[onPageLoaded] 에디터 진입 실패, WebView 노출');
         if (mounted) {
           setState(() {
-            _state     = PublishState.loginRequired; // WebView 노출 재사용
+            _state     = PublishState.loginRequired;
             _statusMsg = '에디터 화면으로 이동 중...\n자동으로 이동되지 않으면 직접 글쓰기 화면으로 이동해 주세요.';
           });
         }
@@ -243,7 +336,6 @@ class _PublishScreenState extends State<PublishScreen> {
       await Future.delayed(const Duration(seconds: 1));
       if (_ctrl == null || !mounted) return;
 
-      // 5초마다 전체 진단 로그
       if (i % 5 == 0) {
         final diag = _jsStr(await _ctrl!.evaluateJavascript(
             source: NaverPublisher.jsDiagnose()));
@@ -260,11 +352,9 @@ class _PublishScreenState extends State<PublishScreen> {
         return;
       }
     }
-    // 마지막 진단 포함해서 오류 표시
     final finalDiag = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsDiagnose()));
-    _setStatus(PublishState.failed,
-        '에디터 로드 타임아웃\n$lastResult\n$finalDiag');
+    _setStatus(PublishState.failed, '에디터 로드 타임아웃\n$lastResult\n$finalDiag');
   }
 
   // ── 주입 + 임시저장 ────────────────────────────────────────
@@ -272,7 +362,6 @@ class _PublishScreenState extends State<PublishScreen> {
     if (!mounted) return;
     _setStatus(PublishState.injecting, '제목 입력 중...');
 
-    // 1. 제목
     final titleResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectTitle(widget.post.title)));
     if (titleResult != 'ok') {
@@ -281,7 +370,6 @@ class _PublishScreenState extends State<PublishScreen> {
     }
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // 2. 본문 (이미지 포함 HTML — SE3가 자동으로 라이브러리에 업로드)
     _setStatus(PublishState.injecting, '본문 입력 중...\n(이미지 업로드 포함)');
     final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtml(widget.post.html)));
@@ -290,13 +378,11 @@ class _PublishScreenState extends State<PublishScreen> {
       _setStatus(PublishState.failed, '본문 입력 실패\n($bodyResult)');
       return;
     }
-    // paste 이벤트가 비동기로 처리되므로 1초 대기 후 내용 확인 + fallback
     await Future.delayed(const Duration(seconds: 2));
     final fallbackResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtmlFallback(widget.post.html)));
     debugPrint('[inject_body_fallback] $fallbackResult');
 
-    // 3. 태그 (있는 경우)
     if (widget.post.tags.isNotEmpty) {
       _setStatus(PublishState.injecting, '태그 입력 중...');
       await _ctrl!.evaluateJavascript(
@@ -304,7 +390,6 @@ class _PublishScreenState extends State<PublishScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
-    // 4. 임시저장
     _setStatus(PublishState.saving, '임시저장 중...');
     final saveResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsClickTempSave()));
@@ -312,7 +397,6 @@ class _PublishScreenState extends State<PublishScreen> {
 
     await Future.delayed(const Duration(seconds: 1));
 
-    // 5. 에디터 노출 + 사이드 패널 닫기 + 상단 스크롤
     if (mounted) {
       setState(() {
         _state     = PublishState.editorReady;
@@ -328,6 +412,9 @@ class _PublishScreenState extends State<PublishScreen> {
 
   // ── 발행 버튼 클릭 ─────────────────────────────────────────
   Future<void> _doPublish() async {
+    // 배너 자동 숨김
+    if (_showBanner) setState(() => _showBanner = false);
+
     if (_ctrl == null) return;
     final result = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsClickPublish()));
