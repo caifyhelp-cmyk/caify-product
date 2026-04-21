@@ -1,65 +1,125 @@
 /// Naver Smart Editor 3 자동화 JS 스니펫 모음
 /// flutter_inappwebview의 evaluateJavascript()로 실행
-/// 데스크톱 SE3 (blog.naver.com) + iframe mainFrame 지원
+/// 메인 도큐먼트 + mainFrame iframe 양쪽 자동 탐지
 library naver_publisher;
 
 class NaverPublisher {
 
-  // ── 공통: iframe 포함 SE3 doc+win 탐지 ─────────────────────────
-  /// _doc / _win 변수를 설정하는 인라인 JS 블록
-  static const String _fw = r'''
-    let _doc = document, _win = window;
-    for (const _f of [
-      document.querySelector("iframe[name='mainFrame']"),
-      document.querySelector("iframe#mainFrame"),
-      document.querySelector("iframe"),
-    ]) {
-      if (!_f) continue;
-      try {
-        const _d = _f.contentDocument;
-        if (_d && _d.querySelector('.se-title-text,.se-section-documentTitle')) {
-          _doc = _d; _win = _f.contentWindow; break;
-        }
-      } catch(e) {}
-    }
+  // ── 공통: 에디터 도큐먼트 탐지 헬퍼 ─────────────────────────────
+  /// 메인 doc → mainFrame iframe → 첫 번째 iframe 순서로 탐색
+  static const String _findDoc = r'''
+    (function _findDoc() {
+      // 1) 메인 도큐먼트에 SE 엘리먼트가 있으면 그대로 사용
+      if (document.querySelector('.se-title-text, .se-section-documentTitle')) {
+        return document;
+      }
+      // 2) mainFrame iframe
+      const frames = [
+        document.querySelector("iframe[name='mainFrame']"),
+        document.querySelector("iframe#mainFrame"),
+        document.querySelector("iframe"),
+      ];
+      for (const f of frames) {
+        if (!f) continue;
+        let d;
+        try { d = f.contentDocument; } catch(e) { continue; }
+        if (d && d.querySelector('.se-title-text, .se-section-documentTitle')) return d;
+      }
+      return null;
+    })()
   ''';
 
-  // ── 페이지 진단 ──────────────────────────────────────────────
+  // ── 페이지 진단 (디버그용) ────────────────────────────────────
+  /// 현재 페이지 구조를 문자열로 반환
   static String jsDiagnose() => r'''
     (function() {
-      const allCe = Array.from(document.querySelectorAll('[contenteditable]'));
-      const ceInfo = allCe.slice(0,4).map(el =>
-        el.tagName + '.' + (el.className||'').split(' ').slice(0,2).join('.').substring(0,20)
-        + '[ph=' + (el.dataset&&el.dataset.placeholder||'').substring(0,10) + ']'
-      ).join('|');
-      // iframe 체크
-      let iframeCe = 0;
-      for (const f of document.querySelectorAll('iframe')) {
-        try { iframeCe += f.contentDocument.querySelectorAll('[contenteditable]').length; } catch(e) {}
-      }
-      return 'ce='+allCe.length+'(if='+iframeCe+') els=['+ceInfo+'] url='+location.pathname.substring(0,40);
+      const iframes = Array.from(document.querySelectorAll('iframe'));
+      const iframeInfo = iframes.map(f => {
+        let docInfo = 'no_access';
+        try {
+          const d = f.contentDocument;
+          if (d) {
+            const title = d.querySelector('.se-title-text, .se-section-documentTitle');
+            const body  = d.querySelector('.se-component.se-text, .se-section-text');
+            docInfo = `title=${!!title},body=${!!body}`;
+          }
+        } catch(e) { docInfo = 'cors'; }
+        return `${f.name||f.id||'?'}[${docInfo}]`;
+      }).join('|');
+
+      const mainTitle = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+      const mainBody  = !!document.querySelector('.se-component.se-text,.se-section-text');
+
+      // 모바일 에디터 요소 탐색
+      const titleInput = document.querySelector('input[placeholder*="제목"]') ||
+                         document.querySelector('input[id*="title"]') ||
+                         document.querySelector('textarea[placeholder*="제목"]');
+      const allInputs = Array.from(document.querySelectorAll('input,textarea'))
+        .map(el=>`${el.tagName}[${el.placeholder||el.id||el.className.substring(0,20)}]`)
+        .slice(0,5).join(',');
+      const bodyEditable = !!document.querySelector('[contenteditable="true"]');
+
+      return `main[title=${mainTitle},body=${mainBody}] iframes=[${iframeInfo}] `+
+             `mobileTitle=${!!titleInput} inputs=[${allInputs}] bodyEdit=${bodyEditable} `+
+             `url=${location.href.substring(0,80)}`;
     })()
   ''';
 
   // ── 에디터 준비 확인 ─────────────────────────────────────────
-  static String jsIsEditorReady() => r'''
+  /// 반환값: 'ready' | 'no_doc:...' | 'not_ready:title=X,body=X'
+  static String jsIsEditorReady() => '''
     (function() {
-      // DIV[contenteditable] 하나라도 있으면 에디터로 간주
-      // (로그인 페이지는 input 기반이라 DIV contenteditable 없음)
-      const check = (doc) => {
-        const ces = Array.from(doc.querySelectorAll('[contenteditable]'))
-          .filter(el => el.tagName === 'DIV' || el.tagName === 'P');
-        return ces.length;
-      };
+      const doc = (function() {
+        if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+        const frames = [
+          document.querySelector("iframe[name='mainFrame']"),
+          document.querySelector("iframe#mainFrame"),
+          document.querySelector("iframe"),
+        ];
+        for (const f of frames) {
+          if (!f) continue;
+          let d;
+          try { d = f.contentDocument; } catch(e) { continue; }
+          if (d && d.querySelector('.se-title-text, .se-section-documentTitle')) return d;
+        }
+        return null;
+      })();
 
-      let count = check(document);
-      // iframe 안도 확인
-      for (const f of document.querySelectorAll('iframe')) {
-        try { count += check(f.contentDocument); } catch(e) {}
+      // 모바일 SE3: input/contenteditable 기반
+      const mobileTitle = document.querySelector('input[placeholder*="제목"]') ||
+                          document.querySelector('textarea[placeholder*="제목"]');
+      const mobileBody  = document.querySelector('[contenteditable="true"]') ||
+                          document.querySelector('textarea:not([placeholder*="제목"])');
+      if (mobileTitle && mobileBody) return 'ready';
+
+      if (!doc) {
+        const iframes = document.querySelectorAll('iframe');
+        return 'no_doc:iframes=' + iframes.length + ',url=' + location.pathname;
       }
+      const titleEl = doc.querySelector('.se-title-text') ||
+                      doc.querySelector('.se-section-documentTitle');
+      const bodyEl  = doc.querySelector('.se-component.se-text') ||
+                      doc.querySelector('.se-section-text');
+      if (titleEl && bodyEl) return 'ready';
+      return 'not_ready:title=' + !!titleEl + ',body=' + !!bodyEl;
+    })()
+  ''';
 
-      if (count > 0) return 'ready_div_ce:' + count;
-      return 'not_ready:ce='+count+',url='+location.pathname;
+  // ── 공통 doc 탐색 (인라인) ───────────────────────────────────
+  static const String _docFinder = r'''
+    (function() {
+      if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+      const frames = [
+        document.querySelector("iframe[name='mainFrame']"),
+        document.querySelector("iframe#mainFrame"),
+        document.querySelector("iframe"),
+      ];
+      for (const f of frames) {
+        if (!f) continue;
+        let d; try { d = f.contentDocument; } catch(e) { continue; }
+        if (d && d.querySelector('.se-title-text,.se-section-documentTitle')) return d;
+      }
+      return null;
     })()
   ''';
 
@@ -68,41 +128,47 @@ class NaverPublisher {
     final escaped = _escapeJs(title);
     return '''
       (function() {
-        $_fw
-        // SE3 제목 contenteditable 요소
-        const el =
-          // SE3 클래스 기반
-          _doc.querySelector('.se-title-text .se-text-paragraph') ||
-          _doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
-          _doc.querySelector('.se-title-text [contenteditable="true"]') ||
-          _doc.querySelector('.se-title-text') ||
-          // placeholder 기반 (SE3 클래스명 변경 대비)
-          _doc.querySelector('[data-placeholder*="제목"][contenteditable="true"]') ||
-          _doc.querySelector('[aria-label*="제목"][contenteditable="true"]') ||
-          _doc.querySelector('[data-placeholder*="제목"]') ||
-          // 위치 기반: 첫 번째 contenteditable (에디터 페이지에서는 title)
-          _doc.querySelector('[contenteditable="true"]');
-        if (!el) {
-          const allCe = Array.from(_doc.querySelectorAll('[contenteditable]')).map(e=>e.className.substring(0,25)).join('|');
-          return 'no_title_el:ce=['+allCe+']';
+        // 방법 A: 모바일 SE3 — input/textarea 기반 제목 필드
+        const inputEl =
+          document.querySelector('input[placeholder*="제목"]') ||
+          document.querySelector('textarea[placeholder*="제목"]') ||
+          document.querySelector('input[id*="title"]') ||
+          document.querySelector('input[name*="title"]');
+        if (inputEl) {
+          inputEl.focus();
+          // React 호환 네이티브 setter
+          const setter = Object.getOwnPropertyDescriptor(
+            Object.getPrototypeOf(inputEl), 'value'
+          )?.set;
+          if (setter) setter.call(inputEl, "$escaped");
+          else inputEl.value = "$escaped";
+          inputEl.dispatchEvent(new Event('input',  { bubbles: true }));
+          inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+          return 'ok_input';
         }
 
-        // 포커스
-        _win.focus();
+        // 방법 B: 데스크톱/iframe SE3 — contenteditable
+        const doc = $_docFinder;
+        if (!doc) return 'no_doc';
+        const el =
+          doc.querySelector('.se-title-text .se-text-paragraph') ||
+          doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
+          doc.querySelector('.se-title-text [contenteditable]') ||
+          doc.querySelector('.se-title-text');
+        if (!el) return 'no_title_el';
         el.focus();
-
-        // 전체 선택 후 교체
-        try {
-          const sel = _win.getSelection();
-          sel.selectAllChildren(el);
-          if (_doc.execCommand('insertText', false, "$escaped")) return 'ok_exec';
-        } catch(e) {}
-
-        // fallback: textContent 직접 세팅
-        el.textContent = "$escaped";
-        el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:"$escaped"}));
-        el.dispatchEvent(new Event('change', {bubbles:true}));
-        return 'ok_direct';
+        const sel = (doc.defaultView || window).getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const inserted = doc.execCommand('insertText', false, "$escaped");
+        if (!inserted) {
+          el.innerText = "$escaped";
+          el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        }
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return 'ok_contenteditable';
       })()
     ''';
   }
@@ -112,33 +178,23 @@ class NaverPublisher {
     final escaped = _escapeJs(html);
     return '''
       (function() {
-        $_fw
-        // SE3 본문 편집 영역
-        const _ces = Array.from(_doc.querySelectorAll('[contenteditable="true"]'));
+        const doc = $_docFinder;
+        if (!doc) return 'no_doc';
         const el =
-          // SE3 클래스 기반
-          _doc.querySelector('.se-module-text') ||
-          _doc.querySelector('.se-component.se-text .__se-node') ||
-          _doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
-          _doc.querySelector('.se-section-text [contenteditable="true"]') ||
-          _doc.querySelector('.se-section-text') ||
-          // placeholder 기반 (네이버 SE3 본문 placeholder)
-          _doc.querySelector('[data-placeholder*="글감"]') ||
-          _doc.querySelector('[data-placeholder*="기록해보세요"]') ||
-          _doc.querySelector('[data-placeholder*="내용"]') ||
-          // 위치 기반: 두 번째 contenteditable (첫 번째는 title)
-          (_ces.length > 1 ? _ces[1] : _ces[0]);
+          doc.querySelector('.se-component.se-text .__se-node') ||
+          doc.querySelector('.se-section-text .__se-node') ||
+          doc.querySelector('.se-component.se-text [contenteditable]') ||
+          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
+          doc.querySelector('[contenteditable="true"].se-text-paragraph');
         if (!el) return 'no_body_el';
-
-        _win.focus();
         el.focus();
 
-        // Method 1: ClipboardEvent paste (SE3 이미지 업로드 포함 처리)
+        // 방법 1: ClipboardEvent paste
         try {
           const dt = new DataTransfer();
           dt.setData('text/html', "$escaped");
-          dt.setData('text/plain', el.innerText || '');
-          el.dispatchEvent(new ClipboardEvent('paste', {
+          dt.setData('text/plain', '');
+          const pasteOk = el.dispatchEvent(new ClipboardEvent('paste', {
             clipboardData: dt, bubbles: true, cancelable: true
           }));
           return 'paste_dispatched';
@@ -149,42 +205,32 @@ class NaverPublisher {
     ''';
   }
 
-  // ── 본문 주입 결과 확인 + fallback ──────────────────────────
+  // ── 본문 주입 결과 확인 + fallback execCommand ───────────────
   static String jsInjectHtmlFallback(String html) {
     final escaped = _escapeJs(html);
     return '''
       (function() {
-        $_fw
-        const _fces = Array.from(_doc.querySelectorAll('[contenteditable="true"]'));
+        const doc = $_docFinder;
+        if (!doc) return 'no_doc';
         const el =
-          _doc.querySelector('.se-module-text') ||
-          _doc.querySelector('.se-component.se-text .__se-node') ||
-          _doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
-          _doc.querySelector('.se-section-text [contenteditable="true"]') ||
-          _doc.querySelector('[data-placeholder*="글감"]') ||
-          _doc.querySelector('[data-placeholder*="기록해보세요"]') ||
-          _doc.querySelector('[data-placeholder*="내용"]') ||
-          (_fces.length > 1 ? _fces[1] : _fces[0]);
+          doc.querySelector('.se-component.se-text .__se-node') ||
+          doc.querySelector('.se-section-text .__se-node') ||
+          doc.querySelector('.se-component.se-text [contenteditable]') ||
+          doc.querySelector('.se-component.se-text .se-text-paragraph');
         if (!el) return 'no_body_el';
 
-        // 이미 내용 있으면 skip
+        // 이미 내용이 있으면 skip
         const txt = (el.innerText || el.textContent || '').trim();
-        if (txt.length > 5) return 'already_filled:' + txt.substring(0, 40);
+        if (txt.length > 5) return 'already_filled:' + txt.substring(0, 30);
 
-        _win.focus();
         el.focus();
+        // 방법 2: execCommand insertHTML
+        const r2 = doc.execCommand('insertHTML', false, "$escaped");
+        if (r2) return 'execCommand_ok';
 
-        // Method 2: selectAll + execCommand insertHTML
-        try {
-          const sel = _win.getSelection();
-          sel.selectAllChildren(el);
-          if (_doc.execCommand('insertHTML', false, "$escaped")) return 'execCommand_ok';
-        } catch(e) {}
-
-        // Method 3: innerHTML 직접 (최후 수단)
+        // 방법 3: innerHTML 직접 (최후 수단)
         el.innerHTML = "$escaped";
-        el.dispatchEvent(new InputEvent('input', {bubbles:true}));
-        el.dispatchEvent(new Event('change', {bubbles:true}));
+        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
         return 'innerHTML_ok';
       })()
     ''';
@@ -196,19 +242,26 @@ class NaverPublisher {
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
-        $_fw
+        const doc = (function() {
+          if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+          const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+          for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+          return null;
+        })();
+        if (!doc) return 'no_doc';
         const tagInput =
-          _doc.querySelector('input.se-tag-input') ||
-          _doc.querySelector('input[placeholder*="태그"]') ||
-          _doc.querySelector('[class*="tag"] input') ||
-          _doc.querySelector('.se-tag-field input');
+          doc.querySelector('input.se-tag-input') ||
+          doc.querySelector('input[placeholder*="태그"]') ||
+          doc.querySelector('[class*="tag"] input') ||
+          doc.querySelector('.se-tag-field input');
         if (!tagInput) return 'no_tag_input';
+        const tagList = [$tagsJson];
         tagInput.focus();
-        for (const tag of [$tagsJson]) {
+        for (const tag of tagList) {
           tagInput.value = tag;
-          tagInput.dispatchEvent(new Event('input', {bubbles:true}));
-          tagInput.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', keyCode:13, bubbles:true}));
-          tagInput.dispatchEvent(new KeyboardEvent('keyup',   {key:'Enter', keyCode:13, bubbles:true}));
+          tagInput.dispatchEvent(new Event('input', { bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keyup',  { key: 'Enter', keyCode: 13, bubbles: true }));
         }
         return 'ok';
       })()
@@ -216,10 +269,15 @@ class NaverPublisher {
   }
 
   // ── 발행 버튼 클릭 ──────────────────────────────────────────
-  static String jsClickPublish() => '''
+  static String jsClickPublish() => r'''
     (function() {
-      $_fw
-      const searchDoc = _doc || document;
+      const doc = (function() {
+        if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+        const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+        for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+        return null;
+      })();
+      const searchDoc = doc || document;
       const btn =
         searchDoc.querySelector('button[data-click-area*="publish"]') ||
         searchDoc.querySelector('button.se-publish-btn') ||
@@ -230,16 +288,16 @@ class NaverPublisher {
           (b.innerText||'').trim() === '발행' || (b.innerText||'').trim() === '발행하기'
         );
       if (!btn) {
-        const all = Array.from(document.querySelectorAll('button'))
+        const allBtns = Array.from(document.querySelectorAll('button'))
           .map(b=>(b.innerText||'').trim().substring(0,10)).filter(t=>t).join(',');
-        return 'no_btn|' + all;
+        return 'no_publish_btn|' + allBtns;
       }
       btn.click();
       return 'ok';
     })()
   ''';
 
-  // ── 에디터 사이드 패널 닫기 + 스크롤 ────────────────────────
+  // ── 에디터 사이드 패널 닫기 + 상단 스크롤 ───────────────────
   static String jsCleanupView() => r'''
     (function() {
       const styleId = 'caify-hide-sidebar';
@@ -247,35 +305,53 @@ class NaverPublisher {
         const s = document.createElement('style');
         s.id = styleId;
         s.textContent = `
-          [class*="feature_guide"],[class*="featureGuide"],
-          [class*="whats_new"],[class*="whatsNew"],
-          [class*="intro_panel"],[class*="introPanel"],
-          [class*="guide_panel"],[class*="se-help"],
-          [class*="help-panel"],[class*="floating_panel"] { display:none!important; }
+          [class*="feature_guide"],
+          [class*="featureGuide"],
+          [class*="whats_new"],
+          [class*="whatsNew"],
+          [class*="intro_panel"],
+          [class*="introPanel"],
+          [class*="guide_panel"],
+          [class*="se-help"],
+          [class*="help-panel"],
+          [class*="floating_panel"] { display: none !important; }
         `;
         document.head.appendChild(s);
       }
+
       ['button[aria-label*="닫기"]','[class*="feature_guide"] button','[class*="guide_panel"] button']
-        .forEach(sel => { const el=document.querySelector(sel); if(el) try{el.click();}catch(e){} });
+        .forEach(sel => {
+          const el = document.querySelector(sel);
+          if (el) { try { el.click(); } catch(e) {} }
+        });
+
       window.scrollTo(0, 0);
       return 'ok';
     })()
   ''';
 
   // ── 임시저장 버튼 클릭 ───────────────────────────────────────
-  static String jsClickTempSave() => '''
+  static String jsClickTempSave() => r'''
     (function() {
-      $_fw
+      const doc = (function() {
+        if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
+        const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+        for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+        return null;
+      })();
+      if (!doc) return 'no_doc';
       const btn =
-        _doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
-        _doc.querySelector('button[class*="temp_save"]') ||
-        _doc.querySelector('button[class*="tempSave"]') ||
-        Array.from(_doc.querySelectorAll('button')).find(b =>
-          (b.innerText||'').trim() === '임시저장'
+        doc.querySelector('button[class*="temp_save"]') ||
+        doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
+        doc.querySelector('button[class*="tempSave"]') ||
+        Array.from(doc.querySelectorAll('button')).find(b =>
+          (b.innerText || '').trim() === '임시저장'
         );
       if (!btn) {
-        const all = Array.from(_doc.querySelectorAll('button'))
-          .map(b=>(b.innerText||'').trim().substring(0,15)).filter(t=>t).join(',');
+        const all = Array.from(doc.querySelectorAll('button'))
+          .map(b => (b.innerText||'').trim().substring(0,15))
+          .filter(t => t)
+          .join(',');
         return 'no_save_btn|' + all;
       }
       btn.click();
@@ -283,10 +359,11 @@ class NaverPublisher {
     })()
   ''';
 
-  // ── URL 판단 ─────────────────────────────────────────────────
+  // ── 현재 URL이 로그인 페이지인지 확인 ────────────────────────
   static bool isLoginUrl(String url) =>
       url.contains('nidlogin') || url.contains('login.naver');
 
+  // ── 현재 URL이 블로그 에디터 페이지인지 확인 ──────────────────
   static bool isEditorUrl(String url) =>
       url.contains('PostWrite') ||
       url.contains('GoBlogWrite') ||
