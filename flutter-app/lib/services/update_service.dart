@@ -28,11 +28,20 @@ class UpdateService {
     // 업데이트 체크는 항상 기본 서버(Render)로 — 저장된 URL이 죽어있을 수 있음
     final base = ApiService.defaultApiBase;
 
-    final res = await http
-        .get(Uri.parse('$base/api/version'))
-        .timeout(const Duration(seconds: 10));
-
-    if (res.statusCode != 200) return null;
+    // Render 무료 플랜 cold start 최대 ~30초 → 재시도 포함
+    http.Response? res;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        res = await http
+            .get(Uri.parse('$base/api/version'))
+            .timeout(const Duration(seconds: 15));
+        if (res.statusCode == 200) break;
+      } catch (_) {
+        if (attempt == 2) return null;
+        await Future.delayed(const Duration(seconds: 5));
+      }
+    }
+    if (res == null || res.statusCode != 200) return null;
 
     final body = res.body.trim();
     // JSON 응답 파싱
