@@ -127,8 +127,9 @@ class NaverPublisher {
           // 실제 contenteditable 요소 탐색 (자식 p 태그 아닌 편집 가능한 컨테이너)
           + 'var cont=document.querySelector(".se-title-text")||document.querySelector(".se-section-documentTitle");'
           + 'if(!cont){document.__caifyResult="no_cont";return;}'
-          + 'var el=cont.isContentEditable?cont:cont.querySelector("[contenteditable]");'
-          + 'if(!el){document.__caifyResult="no_ce";return;}'
+          // contenteditable이 cont의 자식일 수도, 부모일 수도 있음 — 양방향 탐색
+          + 'var el=cont.isContentEditable?cont:cont.querySelector("[contenteditable]")||cont.closest("[contenteditable]");'
+          + 'if(!el){document.__caifyResult="no_ce:"+cont.className;return;}'
           + 'el.click();el.focus();'
           // selectAll + insertText — Chrome 확장과 동일한 방식
           + 'document.execCommand("selectAll",false,null);'
@@ -259,8 +260,8 @@ class NaverPublisher {
             + 'var cont=document.querySelector(".se-component.se-text")'
             + '||document.querySelector(".se-section-text");'
             + 'if(!cont){document.__caifyResult2="no_cont";return;}'
-            + 'var el=cont.querySelector("[contenteditable]");'
-            + 'if(!el){document.__caifyResult2="no_ce";return;}'
+            + 'var el=cont.isContentEditable?cont:cont.querySelector("[contenteditable]")||cont.closest("[contenteditable]");'
+            + 'if(!el){document.__caifyResult2="no_ce:"+cont.className;return;}'
             + 'el.click();el.focus();'
             + 'document.execCommand("selectAll",false,null);'
             + 'if(document.execCommand("insertHTML",false,h)){'
