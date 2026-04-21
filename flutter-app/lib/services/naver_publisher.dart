@@ -108,8 +108,7 @@ class NaverPublisher {
           return 'ok_input';
         }
 
-        // 방법 B: iframe script 주입 — iframe 자체 컨텍스트에서 execCommand 실행
-        // (evaluateJavascript는 상위 프레임에서 실행 → doc.execCommand가 active context 없어 실패)
+        // 방법 B: iframe script 주입 — iframe 자체 컨텍스트에서 paste로 SE3 내부 모델 갱신
         const iframe = document.querySelector("iframe[name='mainFrame']") ||
                        document.querySelector("iframe#mainFrame") ||
                        document.querySelector("iframe");
@@ -118,11 +117,12 @@ class NaverPublisher {
                    : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
         if (!iDoc) return 'no_doc';
 
-        // 제목 텍스트를 document 프로퍼티로 전달 (스크립트 내 문자열 이스케이프 불필요)
+        // 데이터를 document 프로퍼티로 전달 (스크립트 내 문자열 이스케이프 불필요)
         iDoc.__caifyTitle = "$escaped";
         iDoc.__caifyResult = null;
         const s = iDoc.createElement('script');
         s.textContent = '(function(){'
+          + 'try{'
           + 'var t=document.__caifyTitle;'
           + 'var el=document.querySelector(".se-title-text .se-text-paragraph")'
           + '||document.querySelector(".se-section-documentTitle .se-text-paragraph")'
@@ -131,16 +131,22 @@ class NaverPublisher {
           + 'el.focus();'
           + 'var sel=window.getSelection(),r=document.createRange();'
           + 'r.selectNodeContents(el);sel.removeAllRanges();sel.addRange(r);'
-          + 'if(document.execCommand("insertText",false,t)){'
-          + '  sel.removeAllRanges();if(el.blur)el.blur();'
-          + '  document.__caifyResult="ok_exec";return;'
+          // paste(text/plain)로 SE3 내부 모델 갱신 — execCommand보다 신뢰성 높음
+          + 'try{'
+          + '  var dt=new DataTransfer();dt.setData("text/plain",t);dt.setData("text/html","<p>"+t+"</p>");'
+          + '  el.dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));'
+          + '  document.__caifyResult="ok_paste";'
+          + '}catch(pe){'
+          + '  if(document.execCommand("insertText",false,t)){'
+          + '    document.__caifyResult="ok_exec";'
+          + '  }else{'
+          + '    el.innerText=t;'
+          + '    el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:t}));'
+          + '    document.__caifyResult="ok_innerText";'
+          + '  }'
           + '}'
-          + 'el.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertText",data:t}));'
-          + 'el.innerText=t;'
-          + 'el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:t}));'
-          + 'el.dispatchEvent(new Event("change",{bubbles:true}));'
           + 'sel.removeAllRanges();if(el.blur)el.blur();'
-          + 'document.__caifyResult="ok_innerText";'
+          + '}catch(e){document.__caifyResult="err:"+e.message;}'
           + '})();';
         (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
         s.remove();
@@ -250,10 +256,11 @@ class NaverPublisher {
           iDoc2.__caifyResult2 = null;
           const s2 = iDoc2.createElement('script');
           s2.textContent = '(function(){'
+            + 'try{'
             + 'var h=document.__caifyHtml;'
-            + 'var el=document.querySelector(".se-component.se-text [contenteditable=\\"true\\"]")'
-            + '||document.querySelector(".se-section-text [contenteditable=\\"true\\"]")'
-            + '||document.querySelector(".se-component.se-text .se-text-paragraph");'
+            // 속성 선택자 따옴표 없는 단순 클래스 선택자 사용 (이스케이프 불필요)
+            + 'var el=document.querySelector(".se-component.se-text .se-text-paragraph")'
+            + '||document.querySelector(".se-section-text .se-text-paragraph");'
             + 'if(!el){document.__caifyResult2="no_el";return;}'
             + 'el.innerHTML="";el.click();el.focus();'
             + 'var sel=window.getSelection(),r=document.createRange();'
@@ -261,10 +268,16 @@ class NaverPublisher {
             + 'if(document.execCommand("insertHTML",false,h)){'
             + '  document.__caifyResult2="execHTML_ok";return;'
             + '}'
+            // paste 이벤트 시도 (이미지 라이브러리 업로드용)
+            + 'try{'
+            + '  var dt=new DataTransfer();dt.setData("text/html",h);dt.setData("text/plain","");'
+            + '  el.dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));'
+            + '  document.__caifyResult2="paste_ok";return;'
+            + '}catch(pe){}'
             + 'el.innerHTML=h;'
-            + 'el.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertFromPaste"}));'
             + 'el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertFromPaste"}));'
             + 'document.__caifyResult2="innerHTML_ok";'
+            + '}catch(e){document.__caifyResult2="err:"+e.message;}'
             + '})();';
           (iDoc2.head || iDoc2.body || iDoc2.documentElement).appendChild(s2);
           s2.remove();
