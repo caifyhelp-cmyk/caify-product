@@ -207,6 +207,14 @@ class NaverPublisher {
   static bool isLoginUrl(String url) =>
       url.contains('nidlogin') || url.contains('login.naver');
 
+  // ── 현재 URL이 블로그 에디터 페이지인지 확인 ──────────────────
+  static bool isEditorUrl(String url) =>
+      url.contains('PostWrite') ||
+      url.contains('GoBlogWrite') ||
+      url.contains('AuthorPostEditor') ||
+      url.contains('PostWriteForm') ||
+      url.contains('GoPost');
+
   // ── JS 문자열 이스케이프 ──────────────────────────────────────
   static String _escapeJs(String s) => s
       .replaceAll(r'\', r'\\')

@@ -26,6 +26,7 @@ class _PublishScreenState extends State<PublishScreen> {
   PublishState _state = PublishState.loading;
   String _statusMsg   = '에디터 로드 중...';
   bool _waitingStarted = false;
+  int _redirectAttempts = 0;
 
   static String _jsStr(dynamic r) => r?.toString() ?? '';
 
@@ -158,6 +159,7 @@ class _PublishScreenState extends State<PublishScreen> {
   // ── 페이지 로드 핸들러 ─────────────────────────────────────
   Future<void> _onPageLoaded(String url) async {
     if (url.isEmpty) return;
+    debugPrint('[onPageLoaded] $url');
 
     if (NaverPublisher.isLoginUrl(url)) {
       setState(() {
@@ -165,21 +167,49 @@ class _PublishScreenState extends State<PublishScreen> {
         _statusMsg  = '네이버 로그인이 필요합니다.\n로그인 후 자동으로 진행됩니다.';
       });
       _waitingStarted = false;
+      _redirectAttempts = 0;
       return;
     }
 
-    if (!url.contains('blog.naver.com')) return;
-    if (_waitingStarted) return;
-    _waitingStarted = true;
+    // 에디터 URL일 때만 자동화 시작
+    if (NaverPublisher.isEditorUrl(url)) {
+      if (_waitingStarted) return;
+      _waitingStarted = true;
+      _redirectAttempts = 0;
 
-    if (_state == PublishState.loginRequired) {
-      setState(() {
-        _state     = PublishState.loading;
-        _statusMsg = '에디터 로드 중...';
-      });
+      if (_state == PublishState.loginRequired) {
+        setState(() {
+          _state     = PublishState.loading;
+          _statusMsg = '에디터 로드 중...';
+        });
+      }
+      await _waitForEditor();
+      return;
     }
 
-    await _waitForEditor();
+    // 에디터가 아닌 네이버 페이지로 리다이렉트된 경우 재시도
+    if (url.contains('naver.com') && !_waitingStarted) {
+      if (_redirectAttempts < 2) {
+        _redirectAttempts++;
+        debugPrint('[onPageLoaded] 에디터가 아닌 페이지로 리다이렉트, 재시도 $_redirectAttempts');
+        await Future.delayed(const Duration(seconds: 1));
+        if (_ctrl == null || !mounted) return;
+        // 1차: 데스크톱 쓰기 URL, 2차: 모바일 쓰기 URL
+        final writeUrl = _redirectAttempts == 1
+            ? 'https://blog.naver.com/GoBlogWrite.naver'
+            : 'https://m.blog.naver.com/PostWriteForm.naver';
+        await _ctrl!.loadUrl(urlRequest: URLRequest(url: WebUri(writeUrl)));
+      } else {
+        // 2번 재시도 후도 에디터 미진입 → WebView 노출해서 사용자가 직접 이동 가능하게
+        debugPrint('[onPageLoaded] 에디터 진입 실패, WebView 노출');
+        if (mounted) {
+          setState(() {
+            _state     = PublishState.loginRequired; // WebView 노출 재사용
+            _statusMsg = '에디터 화면으로 이동 중...\n자동으로 이동되지 않으면 직접 글쓰기 화면으로 이동해 주세요.';
+          });
+        }
+      }
+    }
   }
 
   // ── 에디터 준비 대기 ───────────────────────────────────────
