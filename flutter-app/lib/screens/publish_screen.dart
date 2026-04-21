@@ -340,41 +340,17 @@ class _PublishScreenState extends State<PublishScreen> {
       return;
     }
 
-    // 에디터가 아닌 네이버 페이지 → URL 패턴 미매칭 가능성 있음
-    // → contenteditable 요소로 에디터 여부 직접 확인
+    // isEditorUrl 미매칭 naver.com 페이지
+    // → SE3 JS 초기화 시간 필요 → 3초 대기 후 _waitForEditor로 진입
     if (url.contains('naver.com') && !_waitingStarted) {
-      // JS로 contenteditable 요소 수 확인 (에디터는 보통 2개 이상)
-      final ceRaw = _jsStr(await _ctrl?.evaluateJavascript(
-        source: 'document.querySelectorAll("[contenteditable=\\"true\\"]").length'));
-      final ceCount = int.tryParse(ceRaw) ?? 0;
-      debugPrint('[onPageLoaded] non-editor url, ce=$ceCount');
-
-      if (ceCount >= 1) {
-        // contenteditable 있음 → 에디터로 간주하고 주입 시작
-        _waitingStarted   = true;
-        _redirectAttempts = 0;
-        _saveNaverCookies();
-        await _waitForEditor();
-        return;
-      }
-
-      // contenteditable 없음 → 아직 에디터 아님, 재시도
-      if (_redirectAttempts < 2) {
-        _redirectAttempts++;
-        debugPrint('[onPageLoaded] 리다이렉트 재시도 $_redirectAttempts');
-        await Future.delayed(const Duration(seconds: 2));
-        if (_ctrl == null || !mounted) return;
-        await _ctrl!.loadUrl(urlRequest: URLRequest(
-          url: WebUri('https://blog.naver.com/GoBlogWrite.naver')));
-      } else {
-        // 재시도 후에도 에디터 없음 → WebView 노출, 사용자 직접 이동
-        if (mounted) {
-          setState(() {
-            _state     = PublishState.loginRequired;
-            _statusMsg = '에디터 화면을 자동으로 찾지 못했습니다.\n글쓰기 화면으로 직접 이동해 주세요.';
-          });
-        }
-      }
+      debugPrint('[onPageLoaded] non-editor url, waiting 3s for SE3 init...');
+      _waitingStarted = true;
+      _redirectAttempts = 0;
+      _saveNaverCookies();
+      // SE3 JavaScript 초기화 대기
+      await Future.delayed(const Duration(seconds: 3));
+      if (_ctrl == null || !mounted) return;
+      await _waitForEditor();
     }
   }
 
@@ -434,7 +410,8 @@ class _PublishScreenState extends State<PublishScreen> {
 
     final titleResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectTitle(widget.post.title)));
-    if (titleResult != 'ok') {
+    debugPrint('[inject_title] $titleResult');
+    if (titleResult.isEmpty || titleResult.startsWith('no_')) {
       _setStatus(PublishState.failed, '제목 입력 실패\n($titleResult)');
       return;
     }
