@@ -38,9 +38,10 @@ class _PublishScreenState extends State<PublishScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_state == PublishState.editorReady
-            ? '에디터 확인 후 발행 버튼을 눌러주세요'
-            : '발행 준비 중'),
+        title: Text(
+          _state == PublishState.editorReady ? '내용 확인 후 발행 버튼 누르세요' : '발행 준비 중',
+          style: const TextStyle(fontSize: 14),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 0,
@@ -52,6 +53,25 @@ class _PublishScreenState extends State<PublishScreen> {
               )
             : const SizedBox.shrink(),
         automaticallyImplyLeading: false,
+        actions: _state == PublishState.editorReady
+            ? [
+                ElevatedButton(
+                  onPressed: _doPublish,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF03C75A),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                  ),
+                  child: const Text('발행하기',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 8),
+              ]
+            : null,
       ),
       body: Stack(
         children: [
@@ -66,6 +86,10 @@ class _PublishScreenState extends State<PublishScreen> {
                 javaScriptEnabled: true,
                 domStorageEnabled: true,
                 sharedCookiesEnabled: true,
+                supportZoom: true,
+                builtInZoomControls: true,
+                displayZoomControls: false,
+                useWideViewPort: true,
                 userAgent:
                     'Mozilla/5.0 (Linux; Android 13; SM-G991B) '
                     'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -288,12 +312,34 @@ class _PublishScreenState extends State<PublishScreen> {
 
     await Future.delayed(const Duration(seconds: 1));
 
-    // 5. 에디터 고객에게 노출 — 발행은 고객이 직접
+    // 5. 에디터 노출 + 사이드 패널 닫기 + 상단 스크롤
     if (mounted) {
       setState(() {
         _state     = PublishState.editorReady;
         _statusMsg = '';
       });
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (_ctrl != null) {
+        await _ctrl!.evaluateJavascript(
+            source: NaverPublisher.jsCleanupView());
+      }
+    }
+  }
+
+  // ── 발행 버튼 클릭 ─────────────────────────────────────────
+  Future<void> _doPublish() async {
+    if (_ctrl == null) return;
+    final result = _jsStr(await _ctrl!.evaluateJavascript(
+        source: NaverPublisher.jsClickPublish()));
+    debugPrint('[publish_btn] $result');
+    if (result != 'ok' && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('발행 버튼을 찾지 못했습니다.\n에디터에서 직접 발행 버튼을 눌러주세요.\n($result)'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 

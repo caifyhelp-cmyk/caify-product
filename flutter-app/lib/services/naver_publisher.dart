@@ -233,6 +233,58 @@ class NaverPublisher {
     ''';
   }
 
+  // ── 발행 버튼 클릭 ──────────────────────────────────────────
+  static String jsClickPublish() => r'''
+    (function() {
+      const doc = (function() {
+        if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+        const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
+        for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
+        return null;
+      })();
+      const searchDoc = doc || document;
+      const btn =
+        searchDoc.querySelector('button[data-click-area*="publish"]') ||
+        searchDoc.querySelector('button.se-publish-btn') ||
+        searchDoc.querySelector('button[class*="publish"]') ||
+        document.querySelector('button[data-click-area*="publish"]') ||
+        document.querySelector('button[class*="publish"]') ||
+        Array.from(document.querySelectorAll('button')).find(b =>
+          (b.innerText||'').trim() === '발행' || (b.innerText||'').trim() === '발행하기'
+        );
+      if (!btn) {
+        const allBtns = Array.from(document.querySelectorAll('button'))
+          .map(b=>(b.innerText||'').trim().substring(0,10)).filter(t=>t).join(',');
+        return 'no_publish_btn|' + allBtns;
+      }
+      btn.click();
+      return 'ok';
+    })()
+  ''';
+
+  // ── 에디터 사이드 패널 닫기 + 상단 스크롤 ───────────────────
+  static String jsCleanupView() => r'''
+    (function() {
+      // 간결해진 에디터 화면 / What's New 패널 닫기 시도
+      const closeSelectors = [
+        'button[class*="guide_close"]',
+        'button[class*="intro_close"]',
+        '[class*="whats_new"] button',
+        '[class*="feature_guide"] button',
+        '[class*="tip_close"]',
+        'button[aria-label*="닫기"]',
+      ];
+      for (const sel of closeSelectors) {
+        const el = document.querySelector(sel);
+        if (el) { el.click(); break; }
+      }
+      // 상단 스크롤
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      return 'ok';
+    })()
+  ''';
+
   // ── 임시저장 버튼 클릭 ───────────────────────────────────────
   static String jsClickTempSave() => r'''
     (function() {
