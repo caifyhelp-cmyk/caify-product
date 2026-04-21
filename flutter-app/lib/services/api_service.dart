@@ -10,7 +10,7 @@ class ApiService {
   static const _keyMemberName = 'memberName';
 
   // 실서버 기본 주소 — 설정 미저장 시 fallback
-  static const defaultApiBase = 'https://caify.ai';
+  static const defaultApiBase = 'https://caify-mock-server.onrender.com';
 
   // ── 설정 저장/로드 ───────────────────────────────────────────
   static Future<void> saveConfig({

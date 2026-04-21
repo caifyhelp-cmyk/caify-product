@@ -36,7 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() { _loading = true; _error = ''; });
 
-    final result = await ApiService.login(memberId: id, password: pw);
+    final cfg = await ApiService.loadConfig();
+    final savedBase = cfg['apiBase']?.isNotEmpty == true ? cfg['apiBase'] : null;
+    final result = await ApiService.login(memberId: id, password: pw, apiBase: savedBase);
 
     if (!mounted) return;
 
