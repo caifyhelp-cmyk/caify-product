@@ -164,11 +164,15 @@ class NaverPublisher {
           + 'var t=document.__caifyTitle;'
           // 1순위: SmartEditor 내부 API — 제목 모듈
           + 'var _sm=window.SmartEditor;'
-          // SmartEditor가 배열이면 [0], 아니면 그 자체를 사용
-          + 'var se3=_sm?(Array.isArray(_sm)?_sm[0]:(_sm.exec?_sm:null)):null;'
-          // getInstance/getEditor 패턴도 시도
-          + 'if(!se3&&_sm){try{se3=_sm.getInstance?_sm.getInstance():null;}catch(e_gi){}}'
-          + 'if(!se3&&_sm){try{se3=_sm.getEditor?_sm.getEditor():null;}catch(e_ge){}}'
+          + 'var se3=null;'
+          // _editors 배열에서 직접 접근 (가장 확실)
+          + 'if(!se3&&_sm&&_sm._editors){try{se3=_sm._editors[0]||null;}catch(e_ed){}}'
+          // getEditor() 호출
+          + 'if(!se3&&_sm){try{var _ge=_sm.getEditor();if(_ge&&typeof _ge==="object")se3=_ge;}catch(e_ge){}}'
+          // 배열이면 [0]
+          + 'if(!se3&&_sm&&Array.isArray(_sm)){se3=_sm[0]||null;}'
+          // SmartEditor 자체에 exec가 있으면 그대로 사용
+          + 'if(!se3&&_sm&&typeof _sm.exec==="function"){se3=_sm;}'
           + 'if(se3){'
           + '  var titleCmds=["SET_DOCUMENT_TITLE","SET_TITLE","DOCUMENT_TITLE"];'
           + '  for(var ci=0;ci<titleCmds.length;ci++){'
@@ -187,7 +191,7 @@ class NaverPublisher {
           + '  document.__caifyResult="se3_no_title_cmd:"+Object.keys(se3).slice(0,10).join(",");'
           + '  return;'
           + '}'
-          // 2순위: <p> 타겟 DOM 직접 수정
+          // 2순위: DOM 직접 수정 + se-is-empty 클래스 제거
           + 'var titleP=document.querySelector(".se-title-text .se-text-paragraph")||document.querySelector(".se-title-text p")||document.querySelector(".se-section-documentTitle p");'
           + 'if(!titleP){document.__caifyResult="no_title_p";return;}'
           + 'var allCE=Array.from(document.querySelectorAll("[contenteditable=true]"));'
@@ -198,6 +202,9 @@ class NaverPublisher {
           + 'titleP.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertText",data:t}));'
           + 'titleP.textContent=t;'
           + 'titleP.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:t}));'
+          // se-is-empty 클래스 제거 — SE3 빈 상태 마커 제거
+          + 'var titleMod=titleP.closest(".__se-unit")||titleP.closest(".se-module");'
+          + 'if(titleMod)titleMod.classList.remove("se-is-empty");'
           + 'if(seEd){seEd.dispatchEvent(new Event("input",{bubbles:true}));sel.removeAllRanges();seEd.blur();}'
           + 'document.__caifyResult="ok_direct";'
           + '}catch(e){document.__caifyResult="err:"+e.message;}'
@@ -314,9 +321,11 @@ class NaverPublisher {
             + 'var h=document.__caifyHtml;'
             // 1순위: SmartEditor exec API — 본문
             + 'var _smb=window.SmartEditor;'
-            + 'var se3b=_smb?(Array.isArray(_smb)?_smb[0]:(_smb.exec?_smb:null)):null;'
-            + 'if(!se3b&&_smb){try{se3b=_smb.getInstance?_smb.getInstance():null;}catch(e_gib){}}'
-            + 'if(!se3b&&_smb){try{se3b=_smb.getEditor?_smb.getEditor():null;}catch(e_geb){}}'
+            + 'var se3b=null;'
+            + 'if(!se3b&&_smb&&_smb._editors){try{se3b=_smb._editors[0]||null;}catch(e_edb){}}'
+            + 'if(!se3b&&_smb){try{var _geb=_smb.getEditor();if(_geb&&typeof _geb==="object")se3b=_geb;}catch(e_geb){}}'
+            + 'if(!se3b&&_smb&&Array.isArray(_smb)){se3b=_smb[0]||null;}'
+            + 'if(!se3b&&_smb&&typeof _smb.exec==="function"){se3b=_smb;}'
             + 'if(se3b){'
             + '  var bodyCmds=["PASTE_HTML","INSERT_HTML","SET_BODY_HTML","EMPTY_BODY_CONTENT_AND_PASTE"];'
             + '  for(var bi=0;bi<bodyCmds.length;bi++){'
