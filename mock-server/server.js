@@ -562,8 +562,9 @@ app.patch('/api/posts/:id', (req, res) => {
   if (req.body.title !== undefined) post.title = req.body.title;
   if (req.body.html !== undefined) {
     post.html = req.body.html;
-    post.naver_html = req.body.html; // brain-agent 수정분은 naver_html에도 반영
+    post.naver_html = req.body.html;
   }
+  if (req.body.tags !== undefined) post.tags = req.body.tags;
 
   saveDb();
   console.log(` [updated] id=${postId} title="${post.title}"`);
@@ -785,6 +786,28 @@ app.get('/api/version', async (req, res) => {
     res.json({ version, apk_url, notes: release.body ? release.body.split('\n')[0] : '', force: false });
   } catch (e) {
     res.json({ version: '1.0.1', apk_url: 'https://github.com/caifyhelp-cmyk/caify-product/releases/latest', notes: '', force: false });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+// POST /admin/reset-db — db.json 삭제 후 DEFAULT 데이터로 초기화
+// ════════════════════════════════════════════════════════════════
+
+app.post('/admin/reset-db', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member || !isAdmin(member)) {
+    return res.status(403).json({ ok: false, error: '관리자 권한이 필요합니다.' });
+  }
+  try {
+    if (fs.existsSync(DB_FILE)) fs.unlinkSync(DB_FILE);
+    posts.length = 0; DEFAULT_POSTS.forEach(p => posts.push(JSON.parse(JSON.stringify(p))));
+    messages.length = 0; DEFAULT_MESSAGES.forEach(m => messages.push(JSON.parse(JSON.stringify(m))));
+    nextPostId = 5; nextMsgId = 4;
+    saveDb();
+    console.log('[admin] DB 리셋 완료');
+    res.json({ ok: true, message: 'DB 초기화 완료', posts: posts.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
