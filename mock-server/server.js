@@ -27,7 +27,7 @@
 
 const express = require('express');
 const app = express();
-const PORT = 3030;
+const PORT = process.env.PORT || 3030;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -704,13 +704,23 @@ app.post('/admin/posts/:id/approve', (req, res) => {
 // GET /api/version  — 앱 버전 및 APK 다운로드 URL
 // Flutter 앱이 시작 시 체크. 현재 버전보다 높으면 업데이트 다이얼로그 표시.
 // ════════════════════════════════════════════════════════════════
-app.get('/api/version', (req, res) => {
-  res.json({
-    version: '1.0.0',          // 배포 시 버전 올리기 (pubspec.yaml과 맞춰야 함)
-    apk_url: 'https://github.com/caifyhelp-cmyk/caify-product/releases/download/v1.0.0/caify_1.0.0.apk',
-    notes: '채팅 알림, 포스팅 뷰어, 하단 탭 내비게이션 추가',
-    force: false,               // true면 '나중에' 버튼 숨김
-  });
+app.get('/api/version', async (req, res) => {
+  try {
+    const response = await fetch(
+      'https://api.github.com/repos/caifyhelp-cmyk/caify-product/releases/latest',
+      { headers: { 'User-Agent': 'caify-mock-server' } }
+    );
+    const release = await response.json();
+    const tag = release.tag_name || 'v1.0.0';
+    const version = tag.replace(/^v/, '');
+    const apk = (release.assets || []).find(a => a.name.endsWith('.apk'));
+    const apk_url = apk
+      ? apk.browser_download_url
+      : `https://github.com/caifyhelp-cmyk/caify-product/releases/download/${tag}/caify_${version}.apk`;
+    res.json({ version, apk_url, notes: release.body ? release.body.split('\n')[0] : '', force: false });
+  } catch (e) {
+    res.json({ version: '1.0.1', apk_url: 'https://github.com/caifyhelp-cmyk/caify-product/releases/latest', notes: '', force: false });
+  }
 });
 
 // ── 상태 확인 ────────────────────────────────────────────────────
