@@ -27,3 +27,6 @@ provision_*.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Mock server DB (파일 영속화 데이터)
+mock-server/data/
