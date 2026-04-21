@@ -22,6 +22,36 @@ class NaverPublisher {
     })()
   ''';
 
+  // ── SE3 이프레임 내부 API 진단 ───────────────────────────────────
+  static String jsDebugSE3() => r'''
+    (function() {
+      const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                     document.querySelector("iframe#mainFrame") ||
+                     document.querySelector("iframe");
+      let iDoc; try { iDoc = iframe ? iframe.contentDocument : null; } catch(e) { return 'cors'; }
+      if (!iDoc) return 'no_iframe_doc';
+
+      const w = iframe.contentWindow;
+      // SE3 글로벌 변수 탐색
+      const seKeys = Object.keys(w).filter(k =>
+        /^(se|SE|nhn|NHN|blog|Blog|editor|Editor|postWrite|PostWrite|smart|Smart)/i.test(k)
+      ).slice(0, 20).join(',');
+
+      // contenteditable 요소들
+      const ces = Array.from(iDoc.querySelectorAll('[contenteditable]')).map(el =>
+        el.tagName + '.' + (el.className || '').split(' ').slice(0,3).join('.') + '[ce=' + el.getAttribute('contenteditable') + ']'
+      ).join('|');
+
+      // 제목 <p> 존재 여부
+      const titleP = iDoc.querySelector('.se-title-text .se-text-paragraph') ||
+                     iDoc.querySelector('.se-title-text p');
+      const bodyP  = iDoc.querySelector('.se-component.se-text .se-text-paragraph') ||
+                     iDoc.querySelector('.se-section-text p');
+
+      return 'seKeys=[' + seKeys + '] ces=[' + ces + '] titleP=' + !!titleP + ' bodyP=' + !!bodyP;
+    })()
+  ''';
+
   // ── 페이지 진단 ───────────────────────────────────────────────
   static String jsDiagnose() => r'''
     (function() {
