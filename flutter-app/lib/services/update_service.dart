@@ -173,7 +173,22 @@ class _UpdateDialogState extends State<_UpdateDialog> {
         );
 
       case _Phase.done:
-        return const Text('다운로드 완료!\n확인을 눌러 설치를 진행하세요.');
+        return const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('다운로드 완료! 설치를 진행하세요.'),
+            SizedBox(height: 10),
+            Text(
+              '💡 설치 중 "출처 불명 앱" 경고가 뜨면\n'
+              '"허용"을 눌러주세요.\n\n'
+              '앱 검사를 끄려면:\n'
+              'Google Play → 프로필 → Play Protect\n'
+              '→ 설정(⚙) → "앱 검사 개선" 끄기',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ],
+        );
 
       case _Phase.error:
         return Text('오류: $_errorMsg',

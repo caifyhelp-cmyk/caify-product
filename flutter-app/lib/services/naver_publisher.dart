@@ -265,20 +265,47 @@ class NaverPublisher {
   // ── 에디터 사이드 패널 닫기 + 상단 스크롤 ───────────────────
   static String jsCleanupView() => r'''
     (function() {
-      // 간결해진 에디터 화면 / What's New 패널 닫기 시도
-      const closeSelectors = [
-        'button[class*="guide_close"]',
-        'button[class*="intro_close"]',
-        '[class*="whats_new"] button',
-        '[class*="feature_guide"] button',
-        '[class*="tip_close"]',
-        'button[aria-label*="닫기"]',
-      ];
-      for (const sel of closeSelectors) {
-        const el = document.querySelector(sel);
-        if (el) { el.click(); break; }
+      // ① CSS로 우측 도움말 사이드바 강제 숨김
+      const styleId = 'caify-hide-sidebar';
+      if (!document.getElementById(styleId)) {
+        const s = document.createElement('style');
+        s.id = styleId;
+        s.textContent = `
+          /* Naver SE3 우측 도움말/기능안내 패널 */
+          [class*="feature_guide"],
+          [class*="featureGuide"],
+          [class*="feature-guide"],
+          [class*="whats_new"],
+          [class*="whatsNew"],
+          [class*="intro_panel"],
+          [class*="introPanel"],
+          [class*="guide_panel"],
+          [class*="se-aside"],
+          .se-aside,
+          aside.se-aside,
+          [class*="aside"],
+          /* 우측 플로팅 패널 */
+          [class*="floating_panel"],
+          [class*="floatingPanel"],
+          [class*="se-help"],
+          [class*="help-panel"] { display: none !important; }
+
+          /* 에디터 본문 영역이 전체 너비 차지하도록 */
+          .se-main-container,
+          [class*="se-main"],
+          [class*="editor_area"],
+          [class*="editorArea"] { width: 100% !important; max-width: 100% !important; }
+        `;
+        document.head.appendChild(s);
       }
-      // 상단 스크롤
+
+      // ② 닫기 버튼도 시도 (있으면 클릭)
+      const closeBtns = document.querySelectorAll(
+        'button[class*="close"], button[aria-label*="닫기"], [class*="guide"] button'
+      );
+      closeBtns.forEach(b => { try { b.click(); } catch(e) {} });
+
+      // ③ 상단으로 스크롤
       window.scrollTo(0, 0);
       document.documentElement.scrollTop = 0;
       return 'ok';
