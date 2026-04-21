@@ -32,23 +32,31 @@ class NaverPublisher {
       if (!iDoc) return 'no_iframe_doc';
 
       const w = iframe.contentWindow;
-      // SE3 글로벌 변수 탐색
-      const seKeys = Object.keys(w).filter(k =>
-        /^(se|SE|nhn|NHN|blog|Blog|editor|Editor|postWrite|PostWrite|smart|Smart)/i.test(k)
-      ).slice(0, 20).join(',');
+
+      // SmartEditor 상세 구조 탐색
+      const sm = w.SmartEditor;
+      const smType = typeof sm;
+      const smIsArr = Array.isArray(sm);
+      const smLen = smIsArr ? sm.length : -1;
+      const sm0 = smIsArr ? sm[0] : null;
+      const smKeys = sm && !smIsArr ? Object.keys(sm).slice(0,15).join(',') : '';
+      const sm0Keys = sm0 ? Object.keys(sm0).slice(0,15).join(',') : (sm && typeof sm.exec==='function' ? 'sm_has_exec' : '');
+      const smInfo = 'type=' + smType + ',isArr=' + smIsArr + ',len=' + smLen + ',smKeys=[' + smKeys + '],sm0Keys=[' + sm0Keys + ']';
+
+      // nhn 네임스페이스
+      const nhn = w.nhn;
+      const nhnKeys = nhn ? Object.keys(nhn).slice(0,8).join(',') : 'null';
+
+      // SE 네임스페이스
+      const SE = w.SE;
+      const seNsKeys = SE ? Object.keys(SE).slice(0,8).join(',') : 'null';
 
       // contenteditable 요소들
       const ces = Array.from(iDoc.querySelectorAll('[contenteditable]')).map(el =>
-        el.tagName + '.' + (el.className || '').split(' ').slice(0,3).join('.') + '[ce=' + el.getAttribute('contenteditable') + ']'
+        el.tagName + '[ce=' + el.getAttribute('contenteditable') + ']'
       ).join('|');
 
-      // 제목 <p> 존재 여부
-      const titleP = iDoc.querySelector('.se-title-text .se-text-paragraph') ||
-                     iDoc.querySelector('.se-title-text p');
-      const bodyP  = iDoc.querySelector('.se-component.se-text .se-text-paragraph') ||
-                     iDoc.querySelector('.se-section-text p');
-
-      return 'seKeys=[' + seKeys + '] ces=[' + ces + '] titleP=' + !!titleP + ' bodyP=' + !!bodyP;
+      return 'SM:{' + smInfo + '} nhn:[' + nhnKeys + '] SE:[' + seNsKeys + '] ces=[' + ces + ']';
     })()
   ''';
 
@@ -155,7 +163,12 @@ class NaverPublisher {
           + 'try{'
           + 'var t=document.__caifyTitle;'
           // 1순위: SmartEditor 내부 API — 제목 모듈
-          + 'var se3=window.SmartEditor&&window.SmartEditor[0];'
+          + 'var _sm=window.SmartEditor;'
+          // SmartEditor가 배열이면 [0], 아니면 그 자체를 사용
+          + 'var se3=_sm?(Array.isArray(_sm)?_sm[0]:(_sm.exec?_sm:null)):null;'
+          // getInstance/getEditor 패턴도 시도
+          + 'if(!se3&&_sm){try{se3=_sm.getInstance?_sm.getInstance():null;}catch(e_gi){}}'
+          + 'if(!se3&&_sm){try{se3=_sm.getEditor?_sm.getEditor():null;}catch(e_ge){}}'
           + 'if(se3){'
           + '  var titleCmds=["SET_DOCUMENT_TITLE","SET_TITLE","DOCUMENT_TITLE"];'
           + '  for(var ci=0;ci<titleCmds.length;ci++){'
@@ -300,7 +313,10 @@ class NaverPublisher {
             + 'try{'
             + 'var h=document.__caifyHtml;'
             // 1순위: SmartEditor exec API — 본문
-            + 'var se3b=window.SmartEditor&&window.SmartEditor[0];'
+            + 'var _smb=window.SmartEditor;'
+            + 'var se3b=_smb?(Array.isArray(_smb)?_smb[0]:(_smb.exec?_smb:null)):null;'
+            + 'if(!se3b&&_smb){try{se3b=_smb.getInstance?_smb.getInstance():null;}catch(e_gib){}}'
+            + 'if(!se3b&&_smb){try{se3b=_smb.getEditor?_smb.getEditor():null;}catch(e_geb){}}'
             + 'if(se3b){'
             + '  var bodyCmds=["PASTE_HTML","INSERT_HTML","SET_BODY_HTML","EMPTY_BODY_CONTENT_AND_PASTE"];'
             + '  for(var bi=0;bi<bodyCmds.length;bi++){'
