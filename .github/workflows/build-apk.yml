@@ -8,6 +8,9 @@ on:
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:  # 수동 실행 버튼
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
