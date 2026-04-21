@@ -127,11 +127,18 @@ class NaverPublisher {
           // 실제 contenteditable 요소 탐색 (자식 p 태그 아닌 편집 가능한 컨테이너)
           + 'var cont=document.querySelector(".se-title-text")||document.querySelector(".se-section-documentTitle");'
           + 'if(!cont){document.__caifyResult="no_cont";return;}'
-          // contenteditable이 cont의 자식일 수도, 부모일 수도 있음 — 양방향 탐색
+          // 1순위: cont 자체 또는 자식/조상 탐색
           + 'var el=cont.isContentEditable?cont:cont.querySelector("[contenteditable]")||cont.closest("[contenteditable]");'
-          + 'if(!el){document.__caifyResult="no_ce:"+cont.className;return;}'
+          // 2순위: 문서 전체 CE 중 cont를 포함하는 것 탐색
+          + 'if(!el){'
+          + '  var allCE=Array.from(document.querySelectorAll("[contenteditable]"));'
+          + '  el=allCE.find(function(c){return c.contains(cont);})'
+          + '    ||allCE.find(function(c){return cont.contains(c);})'
+          + '    ||(allCE.length>0?allCE[0]:null);'
+          + '  if(el)document.__caifyResult="warn_globalCE:"+allCE.length;'
+          + '}'
+          + 'if(!el){document.__caifyResult="no_ce_global";return;}'
           + 'el.click();el.focus();'
-          // selectAll + insertText — Chrome 확장과 동일한 방식
           + 'document.execCommand("selectAll",false,null);'
           + 'if(document.execCommand("insertText",false,t)){'
           + '  document.__caifyResult="ok_execText";'
@@ -142,7 +149,6 @@ class NaverPublisher {
           + '  el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:t}));'
           + '  document.__caifyResult="ok_innerText";'
           + '}'
-          // 제목 삽입 후 반드시 blur — 남은 selection이 본문 paste를 제목에 보내는 것 방지
           + 'el.blur();window.getSelection().removeAllRanges();'
           + '}catch(e){document.__caifyResult="err:"+e.message;}'
           + '})();';
@@ -261,7 +267,13 @@ class NaverPublisher {
             + '||document.querySelector(".se-section-text");'
             + 'if(!cont){document.__caifyResult2="no_cont";return;}'
             + 'var el=cont.isContentEditable?cont:cont.querySelector("[contenteditable]")||cont.closest("[contenteditable]");'
-            + 'if(!el){document.__caifyResult2="no_ce:"+cont.className;return;}'
+            + 'if(!el){'
+            + '  var allCE=Array.from(document.querySelectorAll("[contenteditable]"));'
+            + '  el=allCE.find(function(c){return c.contains(cont);})'
+            + '    ||allCE.find(function(c){return cont.contains(c);})'
+            + '    ||(allCE.length>1?allCE[1]:allCE[0]||null);'
+            + '}'
+            + 'if(!el){document.__caifyResult2="no_ce_global";return;}'
             + 'el.click();el.focus();'
             + 'document.execCommand("selectAll",false,null);'
             + 'if(document.execCommand("insertHTML",false,h)){'
