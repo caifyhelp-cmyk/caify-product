@@ -49,7 +49,19 @@ class NaverPublisher {
 
       const mainTitle = !!document.querySelector('.se-title-text,.se-section-documentTitle');
       const mainBody  = !!document.querySelector('.se-component.se-text,.se-section-text');
-      return `main[title=${mainTitle},body=${mainBody}] iframes=[${iframeInfo}] url=${location.href.substring(0,80)}`;
+
+      // 모바일 에디터 요소 탐색
+      const titleInput = document.querySelector('input[placeholder*="제목"]') ||
+                         document.querySelector('input[id*="title"]') ||
+                         document.querySelector('textarea[placeholder*="제목"]');
+      const allInputs = Array.from(document.querySelectorAll('input,textarea'))
+        .map(el=>`${el.tagName}[${el.placeholder||el.id||el.className.substring(0,20)}]`)
+        .slice(0,5).join(',');
+      const bodyEditable = !!document.querySelector('[contenteditable="true"]');
+
+      return `main[title=${mainTitle},body=${mainBody}] iframes=[${iframeInfo}] `+
+             `mobileTitle=${!!titleInput} inputs=[${allInputs}] bodyEdit=${bodyEditable} `+
+             `url=${location.href.substring(0,80)}`;
     })()
   ''';
 
@@ -73,6 +85,13 @@ class NaverPublisher {
         }
         return null;
       })();
+
+      // 모바일 SE3: input/contenteditable 기반
+      const mobileTitle = document.querySelector('input[placeholder*="제목"]') ||
+                          document.querySelector('textarea[placeholder*="제목"]');
+      const mobileBody  = document.querySelector('[contenteditable="true"]') ||
+                          document.querySelector('textarea:not([placeholder*="제목"])');
+      if (mobileTitle && mobileBody) return 'ready';
 
       if (!doc) {
         const iframes = document.querySelectorAll('iframe');
@@ -110,6 +129,26 @@ class NaverPublisher {
     final escaped = _escapeJs(title);
     return '''
       (function() {
+        // 방법 A: 모바일 SE3 — input/textarea 기반 제목 필드
+        const inputEl =
+          document.querySelector('input[placeholder*="제목"]') ||
+          document.querySelector('textarea[placeholder*="제목"]') ||
+          document.querySelector('input[id*="title"]') ||
+          document.querySelector('input[name*="title"]');
+        if (inputEl) {
+          inputEl.focus();
+          // React 호환 네이티브 setter
+          const setter = Object.getOwnPropertyDescriptor(
+            Object.getPrototypeOf(inputEl), 'value'
+          )?.set;
+          if (setter) setter.call(inputEl, "$escaped");
+          else inputEl.value = "$escaped";
+          inputEl.dispatchEvent(new Event('input',  { bubbles: true }));
+          inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+          return 'ok_input';
+        }
+
+        // 방법 B: 데스크톱/iframe SE3 — contenteditable
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
         const el =
@@ -119,7 +158,6 @@ class NaverPublisher {
           doc.querySelector('.se-title-text');
         if (!el) return 'no_title_el';
         el.focus();
-        // execCommand 방식 (contenteditable에 가장 안정적)
         const sel = (doc.defaultView || window).getSelection();
         const range = doc.createRange();
         range.selectNodeContents(el);
@@ -127,12 +165,11 @@ class NaverPublisher {
         sel.addRange(range);
         const inserted = doc.execCommand('insertText', false, "$escaped");
         if (!inserted) {
-          // fallback: innerText 직접 설정
           el.innerText = "$escaped";
-          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: "$escaped" }));
+          el.dispatchEvent(new InputEvent('input', { bubbles: true }));
         }
         el.dispatchEvent(new Event('change', { bubbles: true }));
-        return 'ok';
+        return 'ok_contenteditable';
       })()
     ''';
   }
@@ -265,49 +302,35 @@ class NaverPublisher {
   // ── 에디터 사이드 패널 닫기 + 상단 스크롤 ───────────────────
   static String jsCleanupView() => r'''
     (function() {
-      // ① CSS로 우측 도움말 사이드바 강제 숨김
+      // ① 특정 클래스명이 명확한 도움말 패널만 숨김 (레이아웃 영향 최소화)
       const styleId = 'caify-hide-sidebar';
       if (!document.getElementById(styleId)) {
         const s = document.createElement('style');
         s.id = styleId;
         s.textContent = `
-          /* Naver SE3 우측 도움말/기능안내 패널 */
           [class*="feature_guide"],
           [class*="featureGuide"],
-          [class*="feature-guide"],
           [class*="whats_new"],
           [class*="whatsNew"],
           [class*="intro_panel"],
           [class*="introPanel"],
           [class*="guide_panel"],
-          [class*="se-aside"],
-          .se-aside,
-          aside.se-aside,
-          [class*="aside"],
-          /* 우측 플로팅 패널 */
-          [class*="floating_panel"],
-          [class*="floatingPanel"],
           [class*="se-help"],
-          [class*="help-panel"] { display: none !important; }
-
-          /* 에디터 본문 영역이 전체 너비 차지하도록 */
-          .se-main-container,
-          [class*="se-main"],
-          [class*="editor_area"],
-          [class*="editorArea"] { width: 100% !important; max-width: 100% !important; }
+          [class*="help-panel"],
+          [class*="floating_panel"] { display: none !important; }
         `;
         document.head.appendChild(s);
       }
 
-      // ② 닫기 버튼도 시도 (있으면 클릭)
-      const closeBtns = document.querySelectorAll(
-        'button[class*="close"], button[aria-label*="닫기"], [class*="guide"] button'
-      );
-      closeBtns.forEach(b => { try { b.click(); } catch(e) {} });
+      // ② 닫기 버튼 클릭 시도
+      ['button[aria-label*="닫기"]','[class*="feature_guide"] button','[class*="guide_panel"] button']
+        .forEach(sel => {
+          const el = document.querySelector(sel);
+          if (el) { try { el.click(); } catch(e) {} }
+        });
 
       // ③ 상단으로 스크롤
       window.scrollTo(0, 0);
-      document.documentElement.scrollTop = 0;
       return 'ok';
     })()
   ''';
