@@ -114,23 +114,29 @@ class NaverPublisher {
         const el =
           doc.querySelector('.se-title-text .se-text-paragraph') ||
           doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
-          doc.querySelector('.se-title-text [contenteditable]') ||
-          doc.querySelector('.se-title-text') ||
-          doc.querySelector('[data-placeholder*="제목"][contenteditable="true"]') ||
-          doc.querySelector('[aria-label*="제목"][contenteditable="true"]');
+          doc.querySelector('.se-title-text [contenteditable="true"]') ||
+          doc.querySelector('[contenteditable="true"][data-placeholder*="제목"]') ||
+          doc.querySelector('[contenteditable="true"][aria-label*="제목"]') ||
+          doc.querySelector('.se-title-text');
         if (!el) return 'no_title_el';
 
         el.focus();
 
-        // 방법 B-1: createRange + execCommand (가장 호환성 좋음)
+        const win = doc.defaultView || window;
+        const sel = win.getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        // 방법 B-1: execCommand insertText
         try {
-          const win = doc.defaultView || window;
-          const sel = win.getSelection();
-          const range = doc.createRange();
-          range.selectNodeContents(el);
-          sel.removeAllRanges();
-          sel.addRange(range);
-          if (doc.execCommand('insertText', false, "$escaped")) return 'ok_exec';
+          if (doc.execCommand('insertText', false, "$escaped")) {
+            // 주입 후 selection 제거 — 본문 paste 시 제목 영역으로 들어가는 것 방지
+            sel.removeAllRanges();
+            if (el.blur) el.blur();
+            return 'ok_exec';
+          }
         } catch(e) {}
 
         // 방법 B-2: innerText + InputEvent
@@ -139,37 +145,67 @@ class NaverPublisher {
           el.innerText = "$escaped";
           el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: "$escaped" }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
+          sel.removeAllRanges();
+          if (el.blur) el.blur();
           return 'ok_innerText';
         } catch(e) {}
 
         // 방법 B-3: textContent 최후 수단
         el.textContent = "$escaped";
         el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        sel.removeAllRanges();
         return 'ok_textContent';
       })()
     ''';
   }
 
   // ── 본문 HTML 주입 ────────────────────────────────────────────
+  // SE3 paste 이벤트 방식: 이미지가 네이버 라이브러리에 자동 업로드됨
   static String jsInjectHtml(String html) {
     final escaped = _escapeJs(html);
     return '''
       (function() {
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-component.se-text .__se-node') ||
-          doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
-          doc.querySelector('[contenteditable="true"].se-text-paragraph') ||
-          doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
-          doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+
+        // 제목 영역 blur — 이전 단계에서 남은 커서 제거
+        const titleArea =
+          doc.querySelector('.se-title-text') ||
+          doc.querySelector('.se-section-documentTitle') ||
+          doc.querySelector('.se-module-documentTitle');
+        if (titleArea) {
+          const tce = titleArea.querySelector('[contenteditable="true"]');
+          if (tce && tce.blur) tce.blur();
+          const win2 = doc.defaultView || window;
+          win2.getSelection()?.removeAllRanges();
+        }
+
+        // 본문 요소 탐색 (제목 영역 제외 보장)
+        const candidates = [
+          doc.querySelector('.se-component.se-text [contenteditable="true"]'),
+          doc.querySelector('.se-section-text [contenteditable="true"]'),
+          doc.querySelector('.se-component.se-text .se-text-paragraph'),
+          doc.querySelector('[data-placeholder*="글감"][contenteditable]'),
+          doc.querySelector('[data-placeholder*="내용"][contenteditable]'),
+        ];
+        const el = candidates.find(c => {
+          if (!c) return false;
+          // 제목 영역 안에 있으면 제외
+          return !c.closest('.se-title-text, .se-section-documentTitle, .se-module-documentTitle');
+        });
         if (!el) return 'no_body_el';
 
+        // 커서를 본문으로 명시적 이동
+        el.click();
         el.focus();
+        const win = doc.defaultView || window;
+        const sel = win.getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
 
-        // 방법 1: ClipboardEvent paste (이미지 포함 HTML에 가장 적합)
+        // ClipboardEvent paste (이미지 → 네이버 라이브러리 업로드)
         try {
           const dt = new DataTransfer();
           dt.setData('text/html', "$escaped");
@@ -192,22 +228,27 @@ class NaverPublisher {
       (function() {
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-component.se-text .__se-node') ||
-          doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
-          doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
-          doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+
+        const candidates = [
+          doc.querySelector('.se-component.se-text [contenteditable="true"]'),
+          doc.querySelector('.se-section-text [contenteditable="true"]'),
+          doc.querySelector('.se-component.se-text .se-text-paragraph'),
+          doc.querySelector('[data-placeholder*="글감"][contenteditable]'),
+          doc.querySelector('[data-placeholder*="내용"][contenteditable]'),
+        ];
+        const el = candidates.find(c => {
+          if (!c) return false;
+          return !c.closest('.se-title-text, .se-section-documentTitle, .se-module-documentTitle');
+        });
         if (!el) return 'no_body_el';
 
-        // 이미 내용 있으면 skip
+        // 이미 내용 있으면 skip (paste 성공한 경우)
         const txt = (el.innerText || el.textContent || '').trim();
         if (txt.length > 5) return 'already_filled:' + txt.substring(0, 30);
 
+        // 커서 이동 후 execCommand insertHTML
+        el.click();
         el.focus();
-
-        // 방법 2: execCommand insertHTML
         try {
           const win = doc.defaultView || window;
           const sel = win.getSelection();
@@ -215,7 +256,7 @@ class NaverPublisher {
           if (doc.execCommand('insertHTML', false, "$escaped")) return 'execCommand_ok';
         } catch(e) {}
 
-        // 방법 3: innerHTML 직접
+        // 최후 수단: innerHTML 직접
         el.innerHTML = "$escaped";
         el.dispatchEvent(new InputEvent('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
