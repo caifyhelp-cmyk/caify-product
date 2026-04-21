@@ -408,37 +408,36 @@ class _PublishScreenState extends State<PublishScreen> {
   // ── 주입 + 임시저장 ────────────────────────────────────────
   Future<void> _doInjectAndTempSave() async {
     if (!mounted) return;
-    _setStatus(PublishState.injecting, '제목 입력 중...');
 
+    // 제목 주입 (실패해도 계속 진행)
+    _setStatus(PublishState.injecting, '제목 입력 중...');
     final titleResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectTitle(widget.post.title)));
     debugPrint('[inject_title] $titleResult');
-    if (titleResult.isEmpty || titleResult.startsWith('no_')) {
-      _setStatus(PublishState.failed, '제목 입력 실패\n($titleResult)');
-      return;
-    }
     await Future.delayed(const Duration(milliseconds: 500));
 
-    _setStatus(PublishState.injecting, '본문 입력 중...\n(이미지 업로드 포함)');
+    // 본문 주입 (실패해도 계속 진행)
+    _setStatus(PublishState.injecting, '본문 입력 중...');
     final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtml(widget.post.html)));
     debugPrint('[inject_body] $bodyResult');
-    if (bodyResult == 'no_doc' || bodyResult == 'no_body_el') {
-      _setStatus(PublishState.failed, '본문 입력 실패\n($bodyResult)');
-      return;
-    }
+
+    // 2초 후 fallback (paste가 안 됐을 경우 execCommand/innerHTML 시도)
     await Future.delayed(const Duration(seconds: 2));
     final fallbackResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtmlFallback(widget.post.html)));
     debugPrint('[inject_body_fallback] $fallbackResult');
 
+    // 태그 주입 (실패해도 계속 진행)
     if (widget.post.tags.isNotEmpty) {
       _setStatus(PublishState.injecting, '태그 입력 중...');
-      await _ctrl!.evaluateJavascript(
-          source: NaverPublisher.jsAddTags(widget.post.tags));
+      final tagResult = _jsStr(await _ctrl!.evaluateJavascript(
+          source: NaverPublisher.jsAddTags(widget.post.tags)));
+      debugPrint('[inject_tags] $tagResult');
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
+    // 임시저장 시도 (실패해도 계속 진행)
     _setStatus(PublishState.saving, '임시저장 중...');
     final saveResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsClickTempSave()));
@@ -446,6 +445,7 @@ class _PublishScreenState extends State<PublishScreen> {
 
     await Future.delayed(const Duration(seconds: 1));
 
+    // 주입 성공 여부와 무관하게 항상 editorReady로 전환 (사용자가 직접 수정 가능)
     if (mounted) {
       setState(() {
         _state     = PublishState.editorReady;
@@ -453,8 +453,7 @@ class _PublishScreenState extends State<PublishScreen> {
       });
       await Future.delayed(const Duration(milliseconds: 500));
       if (_ctrl != null) {
-        await _ctrl!.evaluateJavascript(
-            source: NaverPublisher.jsCleanupView());
+        await _ctrl!.evaluateJavascript(source: NaverPublisher.jsCleanupView());
       }
     }
   }
