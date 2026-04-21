@@ -16,6 +16,9 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePw = true;
   String _error   = '';
 
+  // 로고 탭 카운터 (5번 탭 → 서버 설정)
+  int _logoTapCount = 0;
+
   @override
   void dispose() {
     _idCtrl.dispose();
@@ -50,6 +53,62 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _onLogoTap() {
+    _logoTapCount++;
+    if (_logoTapCount >= 5) {
+      _logoTapCount = 0;
+      _showServerDialog();
+    }
+  }
+
+  Future<void> _showServerDialog() async {
+    final cfg = await ApiService.loadConfig();
+    final ctrl = TextEditingController(
+      text: cfg['apiBase']?.isNotEmpty == true
+          ? cfg['apiBase']
+          : ApiService.defaultApiBase,
+    );
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('서버 설정', style: TextStyle(fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            labelText: 'API 주소',
+            hintText: 'https://caify.ai',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await ApiService.saveConfig(
+                apiBase: ctrl.text.trim(),
+                memberId: cfg['memberId'] ?? '',
+                token: cfg['apiToken'] ?? '',
+              );
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF03C75A),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,20 +120,27 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 로고
-                const Text(
-                  'Caify',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 42,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
+                // 로고 (5탭 → 서버 설정)
+                GestureDetector(
+                  onTap: _onLogoTap,
+                  child: const Column(
+                    children: [
+                      Text(
+                        'Caify',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 42,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'AI 블로그 자동 발행',
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'AI 블로그 자동 발행',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
                 ),
                 const SizedBox(height: 48),
 
