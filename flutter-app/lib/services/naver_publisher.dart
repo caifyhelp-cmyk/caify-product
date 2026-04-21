@@ -353,9 +353,35 @@ class NaverPublisher {
             + 'if(se3b){'
             + '  var ds2=se3b._documentService;'
             + '  var pap2=se3b._papyrus;'
-            // 방법 1: _papyrus paste 플러그인 — 이미지 라이브러리 업로드 가능
+            // 방법 1: getDocumentData로 현재 구조 가져와서 body 컴포넌트만 교체 후 setDocumentData
+            // → 타이틀 컴포넌트를 보존하면서 본문만 수정
+            + '  if(ds2&&typeof ds2.getDocumentData==="function"&&typeof ds2.setDocumentData==="function"){'
+            + '    try{'
+            + '      var docData=ds2.getDocumentData();'
+            + '      var docKeys=docData?Object.keys(docData).join(","):"null";'
+            + '      var comps=docData&&(docData.componentList||docData.components||docData.body||null);'
+            + '      if(Array.isArray(comps)&&comps.length>0){'
+            + '        var textComp=null;'
+            + '        for(var ci=0;ci<comps.length;ci++){'
+            + '          var ct=comps[ci].ctype||comps[ci].type||"";'
+            + '          if(ct==="text"||ct==="TEXT"||ct==="paragraph"){'
+            + '            textComp=comps[ci];break;'
+            + '          }'
+            + '        }'
+            + '        if(textComp){'
+            + '          textComp.html=h;'
+            + '          ds2.setDocumentData(docData);'
+            + '          document.__caifyResult2="ok_setDocData:textComp";return;'
+            + '        }'
+            + '        var compTypes=comps.map(function(c){return c.ctype||c.type||"?";}).join(",");'
+            + '        document.__caifyResult2="no_textComp:n="+comps.length+",types=["+compTypes+"],docKeys=["+docKeys+"]";return;'
+            + '      }'
+            + '      document.__caifyResult2="no_comps:docKeys=["+docKeys+"],preview="+JSON.stringify(docData).substring(0,120);return;'
+            + '    }catch(gdd){document.__caifyResult2="err_getDocData:"+gdd.message;return;}'
+            + '  }'
+            // 방법 2: _papyrus paste 플러그인 (더 많은 이름 시도)
             + '  if(pap2&&typeof pap2.getPlugin==="function"){'
-            + '    var pasteNames=["paste","Paste","PastePlugin","html","Html"];'
+            + '    var pasteNames=["paste","Paste","PastePlugin","html","Html","textPlugin","text","RichText","richText","clipboard","Clipboard","pasteHelper","PasteHelper"];'
             + '    for(var pn=0;pn<pasteNames.length;pn++){'
             + '      try{'
             + '        var plugin=pap2.getPlugin(pasteNames[pn]);'
@@ -367,16 +393,9 @@ class NaverPublisher {
             + '      }catch(ppn){}'
             + '    }'
             + '  }'
-            // 방법 2: _documentService.setDocumentData
-            + '  if(ds2&&typeof ds2.setDocumentData==="function"){'
-            + '    try{ds2.setDocumentData(h);document.__caifyResult2="ok_ds:setDocumentData";return;}catch(dd){}'
-            + '  }'
-            // 방법 3: _documentService.setComponentList (HTML을 컴포넌트로)
-            + '  if(ds2&&typeof ds2.setComponentList==="function"){'
-            + '    try{ds2.setComponentList([{type:"text",html:h}]);document.__caifyResult2="ok_ds:setComponentList";return;}catch(cl){}'
-            + '  }'
             + '  var papBKeys=pap2?Object.getOwnPropertyNames(Object.getPrototypeOf(pap2)).filter(function(k){return k[0]!=="_";}).slice(0,10).join(","):"null";'
-            + '  document.__caifyResult2="se3_no_body:pap=["+papBKeys+"]";'
+            + '  var ds2Keys=ds2?Object.getOwnPropertyNames(Object.getPrototypeOf(ds2)).filter(function(k){return k[0]!=="_";}).slice(0,10).join(","):"null";'
+            + '  document.__caifyResult2="se3_no_body:pap=["+papBKeys+"],ds2=["+ds2Keys+"]";'
             + '  return;'
             + '}'
             // 2순위: DOM <p> 직접 수정
@@ -525,30 +544,34 @@ class NaverPublisher {
   // ── 임시저장 버튼 ─────────────────────────────────────────────
   static String jsClickTempSave() => r'''
     (function() {
-      const doc = (function() {
-        if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
-        const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
-        for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
-        return null;
-      })();
-      if (!doc) return 'no_doc';
-      const btn =
-        doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
-        doc.querySelector('button[class*="temp_save"]') ||
-        doc.querySelector('button[class*="tempSave"]') ||
-        Array.from(doc.querySelectorAll('button')).find(b =>
-          (b.innerText||'').trim() === '임시저장'
-        ) ||
-        Array.from(doc.querySelectorAll('button')).find(b =>
-          (b.innerText||'').trim() === '저장'
-        );
-      if (!btn) {
-        const all = Array.from(doc.querySelectorAll('button'))
-          .map(b=>(b.innerText||'').trim().substring(0,15)).filter(t=>t).join(',');
-        return 'no_save_btn|' + all;
+      // .se-title-text 없어도 버튼 탐색 — 상위/iframe 모두 시도
+      const searchDocs = [document];
+      const frames = [
+        document.querySelector("iframe[name='mainFrame']"),
+        document.querySelector("iframe#mainFrame"),
+        document.querySelector("iframe"),
+      ];
+      for (const f of frames) {
+        if (!f) continue;
+        let d; try { d = f.contentDocument; } catch(e) { continue; }
+        if (d) searchDocs.push(d);
       }
-      btn.click();
-      return 'ok';
+      for (const doc of searchDocs) {
+        const btn =
+          doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
+          doc.querySelector('button[class*="temp_save"]') ||
+          doc.querySelector('button[class*="tempSave"]') ||
+          Array.from(doc.querySelectorAll('button')).find(b =>
+            (b.innerText||'').trim() === '임시저장'
+          ) ||
+          Array.from(doc.querySelectorAll('button')).find(b =>
+            (b.innerText||'').trim() === '저장'
+          );
+        if (btn) { btn.click(); return 'ok'; }
+      }
+      const allBtns = Array.from(document.querySelectorAll('button'))
+        .map(b=>(b.innerText||'').trim().substring(0,15)).filter(t=>t).join(',');
+      return 'no_save_btn|' + allBtns;
     })()
   ''';
 
