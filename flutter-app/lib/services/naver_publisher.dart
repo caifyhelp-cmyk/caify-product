@@ -87,57 +87,116 @@ class NaverPublisher {
     })()
   ''';
 
+  // ── 공통 doc 탐색 (인라인) ───────────────────────────────────
+  static const String _docFinder = r'''
+    (function() {
+      if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+      const frames = [
+        document.querySelector("iframe[name='mainFrame']"),
+        document.querySelector("iframe#mainFrame"),
+        document.querySelector("iframe"),
+      ];
+      for (const f of frames) {
+        if (!f) continue;
+        let d; try { d = f.contentDocument; } catch(e) { continue; }
+        if (d && d.querySelector('.se-title-text,.se-section-documentTitle')) return d;
+      }
+      return null;
+    })()
+  ''';
+
   // ── 제목 입력 ────────────────────────────────────────────────
   static String jsInjectTitle(String title) {
     final escaped = _escapeJs(title);
     return '''
       (function() {
-        const doc = (function() {
-          if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
-          const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
-          for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
-          return null;
-        })();
+        const doc = $_docFinder;
         if (!doc) return 'no_doc';
         const el =
           doc.querySelector('.se-title-text .se-text-paragraph') ||
           doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
+          doc.querySelector('.se-title-text [contenteditable]') ||
           doc.querySelector('.se-title-text');
         if (!el) return 'no_title_el';
         el.focus();
-        el.textContent = "$escaped";
-        el.dispatchEvent(new Event('input',  { bubbles: true }));
+        // execCommand 방식 (contenteditable에 가장 안정적)
+        const sel = (doc.defaultView || window).getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const inserted = doc.execCommand('insertText', false, "$escaped");
+        if (!inserted) {
+          // fallback: innerText 직접 설정
+          el.innerText = "$escaped";
+          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: "$escaped" }));
+        }
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return 'ok';
       })()
     ''';
   }
 
-  // ── 본문 HTML 주입 (ClipboardEvent) ──────────────────────────
+  // ── 본문 HTML 주입 ────────────────────────────────────────────
   static String jsInjectHtml(String html) {
     final escaped = _escapeJs(html);
     return '''
       (function() {
-        const doc = (function() {
-          if (document.querySelector('.se-title-text, .se-section-documentTitle')) return document;
-          const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
-          for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
-          return null;
-        })();
+        const doc = $_docFinder;
         if (!doc) return 'no_doc';
         const el =
           doc.querySelector('.se-component.se-text .__se-node') ||
           doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph');
+          doc.querySelector('.se-component.se-text [contenteditable]') ||
+          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
+          doc.querySelector('[contenteditable="true"].se-text-paragraph');
         if (!el) return 'no_body_el';
         el.focus();
-        const dt = new DataTransfer();
-        dt.setData('text/html', "$escaped");
-        dt.setData('text/plain', '');
-        el.dispatchEvent(new ClipboardEvent('paste', {
-          clipboardData: dt, bubbles: true, cancelable: true
-        }));
-        return 'ok';
+
+        // 방법 1: ClipboardEvent paste
+        try {
+          const dt = new DataTransfer();
+          dt.setData('text/html', "$escaped");
+          dt.setData('text/plain', '');
+          const pasteOk = el.dispatchEvent(new ClipboardEvent('paste', {
+            clipboardData: dt, bubbles: true, cancelable: true
+          }));
+          // 100ms 후 내용 확인 — 비어있으면 방법 2 시도
+          return 'paste_dispatched';
+        } catch(e) {
+          return 'paste_err:' + e.message;
+        }
+      })()
+    ''';
+  }
+
+  // ── 본문 주입 결과 확인 + fallback execCommand ───────────────
+  static String jsInjectHtmlFallback(String html) {
+    final escaped = _escapeJs(html);
+    return '''
+      (function() {
+        const doc = $_docFinder;
+        if (!doc) return 'no_doc';
+        const el =
+          doc.querySelector('.se-component.se-text .__se-node') ||
+          doc.querySelector('.se-section-text .__se-node') ||
+          doc.querySelector('.se-component.se-text [contenteditable]') ||
+          doc.querySelector('.se-component.se-text .se-text-paragraph');
+        if (!el) return 'no_body_el';
+
+        // 이미 내용이 있으면 skip
+        const txt = (el.innerText || el.textContent || '').trim();
+        if (txt.length > 5) return 'already_filled:' + txt.substring(0, 30);
+
+        el.focus();
+        // 방법 2: execCommand insertHTML
+        const r2 = doc.execCommand('insertHTML', false, "$escaped");
+        if (r2) return 'execCommand_ok';
+
+        // 방법 3: innerHTML 직접 (최후 수단)
+        el.innerHTML = "$escaped";
+        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        return 'innerHTML_ok';
       })()
     ''';
   }

@@ -261,11 +261,16 @@ class _PublishScreenState extends State<PublishScreen> {
     _setStatus(PublishState.injecting, '본문 입력 중...\n(이미지 업로드 포함)');
     final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsInjectHtml(widget.post.html)));
-    if (bodyResult != 'ok') {
+    debugPrint('[inject_body] $bodyResult');
+    if (bodyResult == 'no_doc' || bodyResult == 'no_body_el') {
       _setStatus(PublishState.failed, '본문 입력 실패\n($bodyResult)');
       return;
     }
+    // paste 이벤트가 비동기로 처리되므로 1초 대기 후 내용 확인 + fallback
     await Future.delayed(const Duration(seconds: 2));
+    final fallbackResult = _jsStr(await _ctrl!.evaluateJavascript(
+        source: NaverPublisher.jsInjectHtmlFallback(widget.post.html)));
+    debugPrint('[inject_body_fallback] $fallbackResult');
 
     // 3. 태그 (있는 경우)
     if (widget.post.tags.isNotEmpty) {
