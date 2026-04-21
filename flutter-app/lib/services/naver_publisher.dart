@@ -47,11 +47,21 @@ class NaverPublisher {
   static String jsIsEditorReady() => '''
     (function() {
       $_fw
+      // 1) SE3 클래스 기반 (전통적 방식)
       const titleEl = _doc.querySelector('.se-title-text,.se-section-documentTitle');
-      const bodyEl  = _doc.querySelector('.se-module-text,.se-component.se-text,.se-section-text,[contenteditable="true"]');
-      if (!titleEl) return 'no_doc:url='+location.pathname+',iframes='+document.querySelectorAll('iframe').length;
+      const bodyEl  = _doc.querySelector('.se-module-text,.se-component.se-text,.se-section-text');
       if (titleEl && bodyEl) return 'ready';
-      return 'not_ready:title='+!!titleEl+',body='+!!bodyEl;
+
+      // 2) contenteditable 수 기반 (URL 패턴 미매칭 시 fallback)
+      const ces = _doc.querySelectorAll('[contenteditable="true"]');
+      if (ces.length >= 2) return 'ready_ce:'+ces.length;
+      if (ces.length === 1) {
+        // 본문 영역 하나만 있어도 에디터로 간주 (제목 따로 없는 경우)
+        const hasTitle = !!_doc.querySelector('[data-placeholder*="제목"],[aria-label*="제목"]');
+        if (hasTitle) return 'ready_ce1';
+      }
+
+      return 'not_ready:se3title='+!!titleEl+',se3body='+!!bodyEl+',ce='+ces.length+',url='+location.pathname;
     })()
   ''';
 
@@ -63,11 +73,17 @@ class NaverPublisher {
         $_fw
         // SE3 제목 contenteditable 요소
         const el =
+          // SE3 클래스 기반
           _doc.querySelector('.se-title-text .se-text-paragraph') ||
           _doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
           _doc.querySelector('.se-title-text [contenteditable="true"]') ||
-          _doc.querySelector('[contenteditable="true"].se-title-text') ||
-          _doc.querySelector('.se-title-text');
+          _doc.querySelector('.se-title-text') ||
+          // placeholder 기반 (SE3 클래스명 변경 대비)
+          _doc.querySelector('[data-placeholder*="제목"][contenteditable="true"]') ||
+          _doc.querySelector('[aria-label*="제목"][contenteditable="true"]') ||
+          _doc.querySelector('[data-placeholder*="제목"]') ||
+          // 위치 기반: 첫 번째 contenteditable (에디터 페이지에서는 title)
+          _doc.querySelector('[contenteditable="true"]');
         if (!el) {
           const allCe = Array.from(_doc.querySelectorAll('[contenteditable]')).map(e=>e.className.substring(0,25)).join('|');
           return 'no_title_el:ce=['+allCe+']';
@@ -100,12 +116,20 @@ class NaverPublisher {
       (function() {
         $_fw
         // SE3 본문 편집 영역
+        const _ces = Array.from(_doc.querySelectorAll('[contenteditable="true"]'));
         const el =
+          // SE3 클래스 기반
           _doc.querySelector('.se-module-text') ||
           _doc.querySelector('.se-component.se-text .__se-node') ||
           _doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
           _doc.querySelector('.se-section-text [contenteditable="true"]') ||
-          _doc.querySelector('.se-section-text');
+          _doc.querySelector('.se-section-text') ||
+          // placeholder 기반 (네이버 SE3 본문 placeholder)
+          _doc.querySelector('[data-placeholder*="글감"]') ||
+          _doc.querySelector('[data-placeholder*="기록해보세요"]') ||
+          _doc.querySelector('[data-placeholder*="내용"]') ||
+          // 위치 기반: 두 번째 contenteditable (첫 번째는 title)
+          (_ces.length > 1 ? _ces[1] : _ces[0]);
         if (!el) return 'no_body_el';
 
         _win.focus();
@@ -133,12 +157,16 @@ class NaverPublisher {
     return '''
       (function() {
         $_fw
+        const _fces = Array.from(_doc.querySelectorAll('[contenteditable="true"]'));
         const el =
           _doc.querySelector('.se-module-text') ||
           _doc.querySelector('.se-component.se-text .__se-node') ||
           _doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
           _doc.querySelector('.se-section-text [contenteditable="true"]') ||
-          _doc.querySelector('.se-section-text');
+          _doc.querySelector('[data-placeholder*="글감"]') ||
+          _doc.querySelector('[data-placeholder*="기록해보세요"]') ||
+          _doc.querySelector('[data-placeholder*="내용"]') ||
+          (_fces.length > 1 ? _fces[1] : _fces[0]);
         if (!el) return 'no_body_el';
 
         // 이미 내용 있으면 skip

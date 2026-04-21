@@ -106,12 +106,16 @@ class ApiService {
     final uri = Uri.parse('${cfg['apiBase']}/api/posts')
         .replace(queryParameters: params);
 
-    final res = await http.get(uri, headers: await _headers());
-    if (res.statusCode != 200) return [];
-
-    final data = jsonDecode(res.body);
-    final list = data is List ? data : (data['posts'] as List? ?? []);
-    return list.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
+    try {
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body);
+      final list = data is List ? data : (data['posts'] as List? ?? []);
+      return list.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
+    } catch (_) {
+      return []; // 타임아웃·네트워크 오류 시 빈 목록 반환
+    }
   }
 
   // ── 발행 완료 통보 ───────────────────────────────────────────
