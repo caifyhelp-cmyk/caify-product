@@ -108,58 +108,43 @@ class NaverPublisher {
           return 'ok_input';
         }
 
-        // 방법 B: SE3 contenteditable
-        const doc = $_docFinder;
-        if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-title-text .se-text-paragraph') ||
-          doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
-          doc.querySelector('.se-title-text [contenteditable="true"]') ||
-          doc.querySelector('[contenteditable="true"][data-placeholder*="제목"]') ||
-          doc.querySelector('[contenteditable="true"][aria-label*="제목"]') ||
-          doc.querySelector('.se-title-text');
-        if (!el) return 'no_title_el';
+        // 방법 B: iframe script 주입 — iframe 자체 컨텍스트에서 execCommand 실행
+        // (evaluateJavascript는 상위 프레임에서 실행 → doc.execCommand가 active context 없어 실패)
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+        if (!iDoc) return 'no_doc';
 
-        el.focus();
-
-        const win = doc.defaultView || window;
-        const sel = win.getSelection();
-        const range = doc.createRange();
-        range.selectNodeContents(el);
-        sel.removeAllRanges();
-        sel.addRange(range);
-
-        // 방법 B-1: execCommand insertText
-        try {
-          if (doc.execCommand('insertText', false, "$escaped")) {
-            // 주입 후 selection 제거 — 본문 paste 시 제목 영역으로 들어가는 것 방지
-            sel.removeAllRanges();
-            if (el.blur) el.blur();
-            return 'ok_exec';
-          }
-        } catch(e) {}
-
-        // 방법 B-2: innerText + beforeinput/input (SE3 내부 상태 갱신)
-        try {
-          el.focus();
-          // 기존 내용 먼저 지우기
-          el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteContentBackward' }));
-          el.innerHTML = '';
-          // 새 텍스트 삽입 — beforeinput → mutation → input 순서로 SE3 인식
-          el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: "$escaped" }));
-          el.innerText = "$escaped";
-          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: "$escaped" }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          sel.removeAllRanges();
-          if (el.blur) el.blur();
-          return 'ok_innerText';
-        } catch(e) {}
-
-        // 방법 B-3: textContent 최후 수단
-        el.textContent = "$escaped";
-        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        sel.removeAllRanges();
-        return 'ok_textContent';
+        // 제목 텍스트를 document 프로퍼티로 전달 (스크립트 내 문자열 이스케이프 불필요)
+        iDoc.__caifyTitle = "$escaped";
+        iDoc.__caifyResult = null;
+        const s = iDoc.createElement('script');
+        s.textContent = '(function(){'
+          + 'var t=document.__caifyTitle;'
+          + 'var el=document.querySelector(".se-title-text .se-text-paragraph")'
+          + '||document.querySelector(".se-section-documentTitle .se-text-paragraph")'
+          + '||document.querySelector(".se-title-text");'
+          + 'if(!el){document.__caifyResult="no_el";return;}'
+          + 'el.focus();'
+          + 'var sel=window.getSelection(),r=document.createRange();'
+          + 'r.selectNodeContents(el);sel.removeAllRanges();sel.addRange(r);'
+          + 'if(document.execCommand("insertText",false,t)){'
+          + '  sel.removeAllRanges();if(el.blur)el.blur();'
+          + '  document.__caifyResult="ok_exec";return;'
+          + '}'
+          + 'el.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertText",data:t}));'
+          + 'el.innerText=t;'
+          + 'el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:t}));'
+          + 'el.dispatchEvent(new Event("change",{bubbles:true}));'
+          + 'sel.removeAllRanges();if(el.blur)el.blur();'
+          + 'document.__caifyResult="ok_innerText";'
+          + '})();';
+        (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
+        s.remove();
+        return iDoc.__caifyResult || 'null_result';
       })()
     ''';
   }
@@ -253,27 +238,42 @@ class NaverPublisher {
         const isPlaceholder = txt === placeholder || txt === '글감과 함께 나의 일상을 기록해보세요!' || txt === '내용을 입력해주세요.';
         if (txt.length > 5 && !isPlaceholder) return 'already_filled:' + txt.substring(0, 30);
 
-        // 기존 내용(placeholder 포함) 제거 후 커서 이동
-        el.innerHTML = '';
-        el.click();
-        el.focus();
+        // iframe script 주입으로 execCommand('insertHTML') 실행 — SE3 내부 모델 갱신
+        const iframe2 = document.querySelector("iframe[name='mainFrame']") ||
+                        document.querySelector("iframe#mainFrame") ||
+                        document.querySelector("iframe");
+        const inMain2 = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc2 = inMain2 ? document
+                    : (iframe2 ? (function(){try{return iframe2.contentDocument;}catch(e){return null;}}()) : null);
+        if (iDoc2) {
+          iDoc2.__caifyHtml = "$escaped";
+          iDoc2.__caifyResult2 = null;
+          const s2 = iDoc2.createElement('script');
+          s2.textContent = '(function(){'
+            + 'var h=document.__caifyHtml;'
+            + 'var el=document.querySelector(".se-component.se-text [contenteditable=\\"true\\"]")'
+            + '||document.querySelector(".se-section-text [contenteditable=\\"true\\"]")'
+            + '||document.querySelector(".se-component.se-text .se-text-paragraph");'
+            + 'if(!el){document.__caifyResult2="no_el";return;}'
+            + 'el.innerHTML="";el.click();el.focus();'
+            + 'var sel=window.getSelection(),r=document.createRange();'
+            + 'r.selectNodeContents(el);sel.removeAllRanges();sel.addRange(r);'
+            + 'if(document.execCommand("insertHTML",false,h)){'
+            + '  document.__caifyResult2="execHTML_ok";return;'
+            + '}'
+            + 'el.innerHTML=h;'
+            + 'el.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertFromPaste"}));'
+            + 'el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertFromPaste"}));'
+            + 'document.__caifyResult2="innerHTML_ok";'
+            + '})();';
+          (iDoc2.head || iDoc2.body || iDoc2.documentElement).appendChild(s2);
+          s2.remove();
+          return iDoc2.__caifyResult2 || 'null_result2';
+        }
 
-        // execCommand insertHTML
-        try {
-          const win = doc.defaultView || window;
-          const sel = win.getSelection();
-          const r = doc.createRange();
-          r.selectNodeContents(el);
-          sel.removeAllRanges();
-          sel.addRange(r);
-          if (doc.execCommand('insertHTML', false, "$escaped")) return 'execCommand_ok';
-        } catch(e) {}
-
-        // 최후 수단: innerHTML 직접 + input 이벤트
+        // iDoc2 없을 경우 최후 수단
         el.innerHTML = "$escaped";
-        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertFromPaste' }));
         el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
         return 'innerHTML_ok';
       })()
     ''';
