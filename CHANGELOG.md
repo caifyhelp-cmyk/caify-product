@@ -60,4 +60,4 @@ POST /admin/posts/:id/approve
 | 날짜 | 커밋 | 결과 | 비고 |
 |------|------|------|------|
 | 2026-04-21 | e1906b0 | 실패 | Release 권한 누락 |
-| 2026-04-21 | ca0847b | 진행 중 | permissions: contents: write 추가 |
+| 2026-04-21 | ca0847b | **성공** | permissions: contents: write 추가 → APK 릴리즈 완료 |
