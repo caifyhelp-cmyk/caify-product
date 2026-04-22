@@ -1,12 +1,17 @@
 package ai.caify.caify_flutter
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "caify/install"
@@ -32,6 +37,26 @@ class MainActivity : FlutterActivity() {
                             startActivity(intent)
                         }
                         result.success(null)
+                    }
+                    "setClipboardImage" -> {
+                        try {
+                            val path = call.argument<String>("path")
+                                ?: return@setMethodCallHandler result.error("NO_PATH", "path required", null)
+                            val file = File(path)
+                            if (!file.exists()) return@setMethodCallHandler result.error("NO_FILE", "file not found: $path", null)
+
+                            val uri = FileProvider.getUriForFile(
+                                this,
+                                "$packageName.flutter_inappwebview.fileprovider",
+                                file
+                            )
+                            val clip = ClipData.newUri(contentResolver, "image", uri)
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(clip)
+                            result.success("ok")
+                        } catch (e: Exception) {
+                            result.error("ERR", e.message, null)
+                        }
                     }
                     else -> result.notImplemented()
                 }

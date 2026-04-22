@@ -537,6 +537,49 @@ class NaverPublisher {
     ''';
   }
 
+  // ── 본문 끝으로 커서 이동 + 클립보드 paste ───────────────────
+  // 실제 Android 클립보드에 이미지 세팅 후 이 JS 실행 → SE3 라이브러리 업로드
+  static String jsFocusBodyEndAndPaste() => r'''
+    (function() {
+      const findDoc = function() {
+        if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+        const frames = [
+          document.querySelector("iframe[name='mainFrame']"),
+          document.querySelector("iframe#mainFrame"),
+          document.querySelector("iframe"),
+        ];
+        for (const f of frames) {
+          if (!f) continue;
+          let d; try { d = f.contentDocument; } catch(e) { continue; }
+          if (d && d.querySelector('.se-title-text,.se-section-documentTitle')) return d;
+        }
+        return null;
+      };
+      const doc = findDoc();
+      if (!doc) return 'no_doc';
+      const el =
+        doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
+        doc.querySelector('.se-section-text [contenteditable="true"]') ||
+        doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
+        doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+      if (!el) return 'no_body_el';
+      el.focus();
+      const win = doc.defaultView || window;
+      const sel = win.getSelection();
+      const range = doc.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try {
+        const r = doc.execCommand('paste');
+        return 'ok:' + r;
+      } catch(e) {
+        return 'err:' + e.message;
+      }
+    })()
+  ''';
+
   // ── 발행 버튼 클릭 ────────────────────────────────────────────
   static String jsClickPublish() => r'''
     (function() {

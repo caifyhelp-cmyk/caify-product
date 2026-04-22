@@ -1,6 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
 import '../services/naver_publisher.dart';
@@ -439,6 +443,10 @@ class _PublishScreenState extends State<PublishScreen> {
 
     // 태그는 발행 다이얼로그에서 주입 (_doPublish 참고)
 
+    // 이미지 클립보드 붙여넣기 → Naver 라이브러리 업로드
+    _setStatus(PublishState.injecting, '이미지 업로드 중...');
+    await _injectImagesViaClipboard();
+
     // 임시저장 시도 (실패해도 계속 진행)
     _setStatus(PublishState.saving, '임시저장 중...');
     final saveResult = _jsStr(await _ctrl!.evaluateJavascript(
@@ -456,6 +464,55 @@ class _PublishScreenState extends State<PublishScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
       if (_ctrl != null) {
         await _ctrl!.evaluateJavascript(source: NaverPublisher.jsCleanupView());
+      }
+    }
+  }
+
+  // ── 이미지 클립보드 붙여넣기 → Naver 라이브러리 업로드 ────
+  // PostingBridge 방식: 실제 Android 클립보드에 이미지 → execCommand('paste') → SE3 업로드
+  Future<void> _injectImagesViaClipboard() async {
+    if (_ctrl == null) return;
+    final imgRegex = RegExp(r'''<img[^>]+src=["']([^"']+)["']''', caseSensitive: false);
+    final urls = imgRegex
+        .allMatches(widget.post.html)
+        .map((m) => m.group(1)!)
+        .where((u) => u.startsWith('http'))
+        .toList();
+    if (urls.isEmpty) {
+      AppLogger.log('publish', '[img_clip] 이미지 없음');
+      return;
+    }
+    const channel = MethodChannel('caify/install');
+    final tmpDir = await getTemporaryDirectory();
+    for (int i = 0; i < urls.length; i++) {
+      final url = urls[i];
+      AppLogger.log('publish', '[img_clip] 다운로드 $url');
+      try {
+        final resp = await http.get(Uri.parse(url))
+            .timeout(const Duration(seconds: 15));
+        if (resp.statusCode != 200) {
+          AppLogger.log('publish', '[img_clip] 실패: ${resp.statusCode}');
+          continue;
+        }
+        final ext = url.toLowerCase().contains('.png') ? 'png' : 'jpg';
+        final tmpFile = File('${tmpDir.path}/caify_img_$i.$ext');
+        await tmpFile.writeAsBytes(resp.bodyBytes);
+
+        // 1) Android 클립보드에 이미지 세팅
+        final clipResult = await channel.invokeMethod<String>(
+            'setClipboardImage', {'path': tmpFile.path});
+        AppLogger.log('publish', '[img_clip] clipboard=$clipResult');
+
+        // 2) SE3 본문 커서 끝으로 이동 + execCommand('paste')
+        if (_ctrl == null || !mounted) break;
+        final pasteResult = _jsStr(await _ctrl!.evaluateJavascript(
+            source: NaverPublisher.jsFocusBodyEndAndPaste()));
+        AppLogger.log('publish', '[img_clip] paste[$i]=$pasteResult');
+
+        // 3) Naver 업로드 대기
+        await Future.delayed(const Duration(seconds: 4));
+      } catch (e) {
+        AppLogger.log('publish', '[img_clip] 오류: $e');
       }
     }
   }
