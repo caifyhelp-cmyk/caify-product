@@ -170,6 +170,7 @@ class _PublishScreenState extends State<PublishScreen> {
                 builtInZoomControls: true,
                 displayZoomControls: false,
                 useWideViewPort: true,
+                useHybridComposition: true, // WebView를 실제 view hierarchy에 배치 → dispatchKeyEvent 가능
                 userAgent:
                     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                     'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -535,7 +536,7 @@ class _PublishScreenState extends State<PublishScreen> {
 
     // 다이얼로그 열릴 때까지 대기 후 태그 주입
     if (widget.post.tags.isNotEmpty && _ctrl != null) {
-      await Future.delayed(const Duration(milliseconds: 2500));
+      await Future.delayed(const Duration(milliseconds: 1000));
       // 진단: 다이얼로그 열린 후 iframe/input 구조 파악
       final diagResult = _jsStr(await _ctrl!.evaluateJavascript(source: r'''
         (function() {
