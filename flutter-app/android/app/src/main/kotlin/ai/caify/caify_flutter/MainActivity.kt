@@ -64,20 +64,34 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     "dispatchPaste" -> {
-                        // 뷰 계층에서 WebView 찾기 → 실제 Ctrl+V KeyEvent 전송
-                        // → isTrusted=true 붙여넣기 이벤트 → SE3 이미지 Naver CDN 업로드
                         try {
-                            val webView = findWebView(window.decorView.rootView)
-                                ?: return@setMethodCallHandler result.error("NO_WEBVIEW", "WebView not found", null)
-                            webView.requestFocus()
+                            // 우선순위: currentFocus → findFocus → 계층 탐색
+                            val targetView: View? =
+                                window.currentFocus
+                                    ?: window.decorView.findFocus()
+                                    ?: findWebView(window.decorView.rootView)
+
+                            if (targetView == null) {
+                                // 진단: 최상위 자식 뷰 목록
+                                val root = window.decorView.rootView
+                                val diag = if (root is ViewGroup) {
+                                    (0 until root.childCount).joinToString(",") {
+                                        root.getChildAt(it).javaClass.simpleName
+                                    }
+                                } else root.javaClass.simpleName
+                                result.error("NO_VIEW", "No view found. rootChildren=[$diag]", null)
+                                return@setMethodCallHandler
+                            }
+
+                            targetView.requestFocus()
                             val now = SystemClock.uptimeMillis()
                             val down = KeyEvent(now, now, KeyEvent.ACTION_DOWN,
                                 KeyEvent.KEYCODE_V, 0, KeyEvent.META_CTRL_ON)
                             val up = KeyEvent(now, now, KeyEvent.ACTION_UP,
                                 KeyEvent.KEYCODE_V, 0, KeyEvent.META_CTRL_ON)
-                            webView.dispatchKeyEvent(down)
-                            webView.dispatchKeyEvent(up)
-                            result.success("ok")
+                            val r1 = targetView.dispatchKeyEvent(down)
+                            val r2 = targetView.dispatchKeyEvent(up)
+                            result.success("ok:${targetView.javaClass.simpleName}:$r1/$r2")
                         } catch (e: Exception) {
                             result.error("ERR", e.message, null)
                         }
@@ -87,8 +101,10 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun findWebView(view: View): WebView? {
+    // WebView 계층 탐색 (클래스명 포함 방식 — flutter_inappwebview 서브클래스 대응)
+    private fun findWebView(view: View): View? {
         if (view is WebView) return view
+        if (view.javaClass.name.contains("WebView", ignoreCase = true)) return view
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) {
                 val found = findWebView(view.getChildAt(i))

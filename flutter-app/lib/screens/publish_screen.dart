@@ -505,13 +505,13 @@ class _PublishScreenState extends State<PublishScreen> {
             'setClipboardImage', {'path': tmpFile.path});
         AppLogger.log('publish', '[img_inject] clipboard[$i]=$clipResult');
 
-        // 2) SE3 본문 커서 끝으로 이동
+        // 2) SE3 본문 커서 끝으로 이동 (focus만, paste는 dispatchPaste에서)
         if (_ctrl == null || !mounted) break;
         await _ctrl!.evaluateJavascript(
             source: NaverPublisher.jsFocusBodyEndAndPaste());
 
-        // 3) 실제 Ctrl+V KeyEvent → isTrusted paste 이벤트 발생
-        await Future.delayed(const Duration(milliseconds: 200));
+        // 3) Android focus 반영 대기 후 실제 Ctrl+V KeyEvent
+        await Future.delayed(const Duration(milliseconds: 600));
         final pasteResult = await channel.invokeMethod<String>('dispatchPaste');
         AppLogger.log('publish', '[img_inject] dispatchPaste[$i]=$pasteResult');
 
