@@ -509,17 +509,42 @@ class NaverPublisher {
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
-        const tagInput =
-          document.querySelector('input[placeholder*="#태그"]') ||
-          document.querySelector('input[placeholder*="태그를 입력"]') ||
-          document.querySelector('input[placeholder*="태그"]') ||
-          document.querySelector('[class*="tag_input"] input') ||
-          document.querySelector('[class*="TagInput"] input');
+        // 발행 다이얼로그는 top-level 또는 iframe 안에 있을 수 있음 — 둘 다 탐색
+        const searchDocs = [document];
+        const frames = [
+          document.querySelector("iframe[name='mainFrame']"),
+          document.querySelector("iframe#mainFrame"),
+          document.querySelector("iframe"),
+        ];
+        for (const f of frames) {
+          if (!f) continue;
+          let d; try { d = f.contentDocument; } catch(e) { continue; }
+          if (d) searchDocs.push(d);
+        }
+
+        const findTagInput = (doc) =>
+          doc.querySelector('input[placeholder*="#태그"]') ||
+          doc.querySelector('input[placeholder*="태그를 입력"]') ||
+          doc.querySelector('input[placeholder*="태그"]') ||
+          doc.querySelector('[class*="tag_input"] input') ||
+          doc.querySelector('[class*="TagInput"] input') ||
+          doc.querySelector('[class*="tag"] input') ||
+          doc.querySelector('input[name*="tag"]');
+
+        let tagInput = null;
+        for (const doc of searchDocs) {
+          tagInput = findTagInput(doc);
+          if (tagInput) break;
+        }
+
         if (!tagInput) {
-          const allInputs = Array.from(document.querySelectorAll('input'))
-            .map(i => (i.placeholder||'').substring(0,20)).filter(Boolean).join('|');
+          const allInputs = searchDocs.flatMap(doc =>
+            Array.from(doc.querySelectorAll('input'))
+              .map(i => (i.placeholder||i.name||'').substring(0,20)).filter(Boolean)
+          ).join('|');
           return 'no_tag_input|inputs=[' + allInputs + ']';
         }
+
         tagInput.focus();
         let added = 0;
         for (const tag of [$tagsJson]) {
