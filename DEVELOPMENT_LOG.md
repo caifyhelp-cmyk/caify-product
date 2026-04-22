@@ -3,84 +3,154 @@
 ## 프로젝트 구조
 
 ```
-caify-product/
-├── flutter-app/          # Android APK (메인 제품)
+caify-product/                         ← GitHub: caifyhelp-cmyk/caify-product
+├── flutter-app/                       # Android APK (메인 제품)
 │   ├── lib/
-│   │   ├── main.dart
-│   │   ├── models/post.dart
 │   │   ├── screens/
-│   │   │   ├── home_screen.dart
-│   │   │   ├── login_screen.dart
-│   │   │   ├── publish_screen.dart   ← 핵심: 네이버 에디터 WebView
+│   │   │   ├── publish_screen.dart    ← 핵심: 네이버 에디터 WebView + 주입 흐름
 │   │   │   ├── post_list_screen.dart
-│   │   │   └── settings_screen.dart
+│   │   │   ├── chat_screen.dart
+│   │   │   └── settings_screen.dart  ← 로그 뷰어 포함
 │   │   └── services/
-│   │       ├── api_service.dart      ← Caify 서버 API
-│   │       ├── naver_publisher.dart  ← SE3 JS 주입 코드 (핵심)
-│   │       └── update_service.dart   ← GitHub Releases 자동 업데이트
+│   │       ├── naver_publisher.dart   ← SE3 JS 주입 코드 (핵심)
+│   │       ├── api_service.dart       ← Caify 서버 API
+│   │       ├── app_logger.dart        ← 인앱 로그 저장
+│   │       └── update_service.dart    ← GitHub Releases 자동 업데이트
 │   └── android/
-│       └── app/src/main/
-│           ├── kotlin/.../MainActivity.kt  ← APK 설치 MethodChannel
-│           └── res/
-│               ├── mipmap-*/ic_launcher.png
-│               ├── mipmap-anydpi-v26/ic_launcher.xml  ← 어댑티브 아이콘
-│               └── drawable/ic_launcher_*.xml
-├── mock-server/
-│   └── server.js         ← 로컬 테스트용 Express 서버 (포트 3030)
-├── electron-tray/        ← Windows 트레이 앱 (별도)
-├── provision/            ← n8n 프로비저닝
-├── docs/index.html       ← APK 다운로드 랜딩 페이지 (GitHub Pages)
-├── .github/workflows/build-apk.yml  ← CI/CD
-├── CHANGELOG.md
-└── DEVELOPMENT_LOG.md    ← 이 파일
+│       └── app/src/main/kotlin/.../MainActivity.kt  ← APK 설치 MethodChannel
+├── mock-server/server.js              # 로컬 테스트용 Express (포트 3030)
+├── electron-tray/                     # Windows 트레이 앱
+├── provision/                         # n8n 프로비저닝 스크립트
+├── docs/index.html                    # APK 다운로드 랜딩 페이지 (GitHub Pages)
+└── .github/workflows/build-apk.yml   # CI/CD → 자동 APK 빌드
 ```
+
+**로컬 PHP 소스 위치**: `C:\Users\조경일\caify_php_src\html\` (caify.ai 실서버 소스)
+
+---
+
+## APK 다운로드 URL 및 GitHub Pages
+
+- **랜딩 페이지**: `https://caifyhelp-cmyk.github.io/caify-product/`
+  - 파일: `docs/index.html` (버튼 클릭 → APK 즉시 다운로드)
+  - ⚠️ GitHub Pages 활성화 필요: repo Settings → Pages → Source: `master` / `docs/` 폴더
+- **APK 직접 링크 (항상 최신)**: `https://github.com/caifyhelp-cmyk/caify-product/releases/latest/download/caify.apk`
 
 ---
 
 ## 핵심 설정값
 
 ### API 서버
-- **기본값**: `https://caify-mock-server.onrender.com` (Render 무료 서버, cold start 있음)
-- **로컬 테스트**: `http://10.0.2.2:3030` (Android 에뮬레이터에서 localhost)
-- 실서버 전환 시: LoginScreen에서 서버 주소 변경 (로고 5번 탭 → 숨겨진 설정)
+| 환경 | 주소 |
+|------|------|
+| 현재 (테스트) | `https://caify-mock-server.onrender.com` |
+| 로컬 에뮬레이터 | `http://10.0.2.2:3030` |
+| **실서버 (caify.ai)** | `https://caify.ai` (전환 예정) |
+
+- 서버 주소 변경: 앱 로고 5번 탭 → 숨겨진 설정창
 
 ### 네이버 에디터 설정
 - **UA**: 데스크톱 Chrome 120 (모바일 UA → 네이버 "일시적 오류" 발생)
 - **초기 URL**: `https://blog.naver.com/GoBlogWrite.naver`
-- **모바일 UA 쓰면 안 되는 이유**: 네이버가 모바일 에디터로 리다이렉트하거나 오류 반환
-
-### GitHub
-- **Repo**: `https://github.com/caifyhelp-cmyk/caify-product`
-- **APK 다운로드 (항상 최신)**: `https://github.com/caifyhelp-cmyk/caify-product/releases/latest/download/caify.apk`
-- **랜딩 페이지**: `https://caifyhelp-cmyk.github.io/caify-product/` (GitHub Pages, docs/ 폴더)
 
 ---
 
 ## SE3 주입 동작 원리 (naver_publisher.dart)
 
-### 흐름
-1. `jsIsEditorReady()` 로 에디터 로드 확인 (1초 간격, 최대 60초)
-2. 준비되면 `_doInjectAndTempSave()` 실행:
-   - `jsInjectTitle()` → 제목 입력
+### 전체 흐름
+1. `jsIsEditorReady()` — 1초 간격, 최대 60초 폴링
+2. 준비되면 `_doInjectAndTempSave()`:
+   - `jsDebugSE3()` → SE3 내부 구조 진단 (로그용)
+   - `jsInjectTitle()` → 제목 입력 (SE3 API → iframe script → DOM 순)
    - `jsInjectHtml()` → 본문 HTML paste
    - `jsInjectHtmlFallback()` → 2초 후 내용 없으면 execCommand/innerHTML
-   - `jsAddTags()` → 태그 입력
+   - 이미지 URL 파싱 → Flutter `http.get` 다운로드 → base64 → `jsInjectImageBlob()` paste (SE3 라이브러리 업로드)
+   - `jsAddTags()` → 태그 입력 (SE3 _tagService API → iframe+outer DOM 순)
    - `jsClickTempSave()` → 임시저장
-3. 항상 `editorReady` 상태로 전환 (주입 성공/실패 무관)
-4. 사용자가 에디터 확인 후 "발행하기" 버튼 클릭
-
-### 중요: 주입 실패해도 에디터는 보임
-`_doInjectAndTempSave()`는 실패해도 `failed`가 아닌 `editorReady`로 전환.
-→ 사용자가 에디터에서 직접 내용 확인/수정 가능.
+3. 항상 `editorReady`로 전환 (주입 실패해도 에디터 보임 → 사용자가 직접 수정 가능)
+4. 사용자가 "발행하기" 버튼 클릭
 
 ### jsIsEditorReady 탐지 순서
-1. SE3 `.se-title-text` + `.se-component.se-text` 둘 다 있으면 → `ready_se3`
-2. 모바일 `input[placeholder*="제목"]` 있으면 → `ready_mobile`
+1. SE3 `.se-title-text` + `.se-component.se-text` 둘 다 → `ready_se3`
+2. 모바일 `input[placeholder*="제목"]` → `ready_mobile`
 3. `DIV[contenteditable]` 2개 이상 → `ready_ce:N`
 
-### _docFinder
-SE3 에디터 document를 찾는 공통 IIFE.
-메인 doc → mainFrame iframe → 첫 iframe 순으로 탐색.
+### 로그 진단 키
+앱 설정 → 로그 보기 → 전체 복사:
+- `[ready[N]]` — `ready_se3` / `ready_ce:N` / `not_ready:...`
+- `[se3_diag]` — SmartEditor 내부 API 구조
+- `[inject_title]` — `ok_ds:setTitle` / `ok_direct` / `no_title_p`
+- `[inject_body]` — `paste_dispatched` / `no_body_el`
+- `[inject_img]` — `ok` / `err:...` (이미지별)
+- `[inject_tags]` — `ok_tagService:addTag` / `ok:3` / `no_tag_input`
+- `[temp_save]` — `ok` / `no_save_btn|...`
+
+---
+
+## 실서버 전환 계획 (caify.ai → Bearer 토큰 API 추가)
+
+### 현재 실서버 구조 (caify.ai PHP)
+실서버는 **PHP 세션 기반** 인증이고, Flutter 앱은 **Bearer 토큰** 방식.
+→ 실서버에 앱 전용 JSON API 엔드포인트를 새로 추가해야 함.
+
+**현재 실서버에 있는 것:**
+| 파일 | 역할 |
+|------|------|
+| `api/index.php` | n8n이 AI 포스트 저장 (POST JSON) |
+| `api/post_meta/index.php` | 고객 프롬프트 메타데이터 조회 |
+| `output/output_publish_guard.php` | `mark_posting` (세션 기반, posting_date 갱신) |
+| `output/output_list.php` | 포스트 목록 (HTML 웹페이지) |
+| `member/login.php` | 웹 로그인 폼 (세션, JSON API 아님) |
+
+**새로 추가해야 할 API (php 파일):**
+
+#### 1. `api/app_login.php` — 앱 로그인 (Bearer 토큰 발급)
+```
+POST https://caify.ai/api/app_login.php
+Body: { "member_id": "...", "passwd": "..." }
+Response: { "ok": true, "member_pk": 1, "api_token": "...", "company_name": "..." }
+```
+- `caify_member` 테이블에서 `password_verify()` 검증
+- `api_token` 컬럼이 있으면 반환, 없으면 `random_bytes(32)` 생성 후 저장
+
+#### 2. `api/app_posts.php` — 발행 대기 목록
+```
+GET https://caify.ai/api/app_posts.php?status=ready&member_pk=X
+Header: Authorization: Bearer <api_token>
+Response: [{ "id": 1, "title": "...", "html": "...", "tags": [...], "posting_date": null }]
+```
+- `ai_posts` 테이블: `status=1 AND posting_date IS NULL AND customer_id=member_pk`
+- `tags` 컬럼 없으면 별도 조회 또는 빈 배열 반환
+
+#### 3. `api/app_publish.php` — 발행 완료/실패 기록
+```
+POST https://caify.ai/api/app_publish.php
+Header: Authorization: Bearer <api_token>
+Body: { "id": 1, "action": "published" }  또는  { "id": 1, "action": "failed", "reason": "..." }
+Response: { "ok": true }
+```
+- `published`: `UPDATE ai_posts SET posting_date = NOW() WHERE id=? AND customer_id=?`
+- `failed`: posting_date null 유지 (재시도 가능)
+
+### Bearer 토큰 인증 헬퍼 (3개 파일 공통)
+```php
+function auth_by_token(PDO $pdo): array {
+    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    $token = preg_replace('/^Bearer\s+/i', '', $auth);
+    if (!$token) { http_response_code(401); exit; }
+    $stmt = $pdo->prepare('SELECT * FROM caify_member WHERE api_token = ? LIMIT 1');
+    $stmt->execute([$token]);
+    $member = $stmt->fetch();
+    if (!$member) { http_response_code(401); exit; }
+    return $member;
+}
+```
+
+### 전환 순서
+1. `caify_member` 테이블에 `api_token VARCHAR(64)` 컬럼 추가
+2. 위 3개 PHP 파일 작성 및 배포
+3. Flutter `api_service.dart`에서 서버 주소 `caify.ai`로 변경
+4. mock-server 완전 제거 or 개발용으로만 유지
 
 ---
 
@@ -89,103 +159,49 @@ SE3 에디터 document를 찾는 공통 IIFE.
 - 앱 시작 시 GitHub Releases API 호출
 - `tag_name` (v1.2.3) vs 현재 앱 버전 비교
 - 새 버전 있으면 다이얼로그 → APK 다운로드 → 설치
-- Render cold start 문제로 GitHub API로 변경 (즉시 응답)
 
 ---
 
 ## mock-server (로컬 테스트)
 
 ```bash
-cd mock-server
-node server.js  # 포트 3030
+cd mock-server && node server.js  # 포트 3030
 ```
 
-### 테스트 계정
-- ID: `test` / PW: `test123`
-
-### 테스트 포스팅 (id=1)
-- 제목: 임플란트 비용 가이드
-- 태그: 임플란트, 치과, 비용
-- 이미지: picsum.photos 포함
+테스트 계정: `testuser` / `password123`, `admin` / `adminpass`  
+Render 배포 URL: `https://caify-mock-server.onrender.com`
 
 ---
 
 ## 알려진 이슈 및 히스토리
 
-### SE3 주입 관련
-- **v1.1.8에서 주입 코드 전면 재작성 → broken**
-  - `_fw` 변수 주입 방식으로 바꿨다가 문제 발생
-  - `jsIsEditorReady()`를 raw string으로 만들어 `$_fw` 미삽입 → 에디터 미완성 상태에서 주입
-  - v1.2.2, v1.2.3에서 복원 및 수정
+### SE3 주입
+- v1.1.8 전면 재작성 후 broken → v1.2.2~v1.2.3 복원
+- 제목/본문 분리 버그 (v1.2.9에서 수정)
+- 태그 `no_tag_input`: SE3 iframe 안에서만 탐색해서 outer doc 못 찾음 → 양쪽 탐색으로 수정
+- 이미지 외부 URL paste → 라이브러리 미등록 → blob paste로 변경
 
-- **execCommand deprecated 이슈**
-  - Android WebView에서 `execCommand('insertText')` 여전히 동작함
-  - 안 될 경우 `innerText` setter → `textContent` 순으로 폴백
-
-- **ClipboardEvent paste**
-  - 본문 HTML 주입에 가장 적합 (이미지 포함 HTML 처리)
-  - 안 될 경우 `execCommand('insertHTML')` → `innerHTML` 직접 할당
-
-### 앱 아이콘
-- 초기 PNG 파일이 투명(1031바이트)으로 아이콘 안 보임
-- v1.2.3에서 `mipmap-anydpi-v26` 어댑티브 아이콘 + 녹색 PNG 교체
-
-### Render cold start
-- 무료 Render 서버 첫 요청 ~30초 걸림
-- 업데이트 체크: GitHub Releases API로 대체 (해결)
-- fetchPosts: 10초 타임아웃 + 빈 목록 반환 (해결)
-
----
-
-## 실서버 전환 체크리스트
-
-현재 `mock-server/server.js`를 실제 서버로 교체할 때:
-
-- [ ] `/member/login` 엔드포인트
-- [ ] `GET /api/posts?member_pk=X&status=ready`
-- [ ] `POST /api/posts/:id/published`
-- [ ] `POST /api/posts/:id/failed`
-- [ ] 응답 형식: `{ ok: true, posts: [...], tags: [...] }`
-- [ ] `tags` 필드 반드시 포함 (없으면 태그 입력 안 됨)
+### 기타
+- 앱 아이콘 투명(1031바이트) → v1.2.3에서 어댑티브 아이콘 추가
+- Render cold start (~30초): 업데이트 체크는 GitHub API로 대체
 
 ---
 
 ## CI/CD (.github/workflows/build-apk.yml)
 
-트리거: `flutter-app/**` 또는 `.github/workflows/build-apk.yml` 변경 시 자동 빌드
+트리거: `flutter-app/**` 변경 시 자동 빌드 (~5분)  
+결과: GitHub Release에 `caify_버전.apk` + `caify.apk` (고정명)
 
-빌드 결과:
-- GitHub Release: `caify_1.2.3.apk` (버전명) + `caify.apk` (고정명)
-- 소요 시간: 약 5분
-
-Secrets 필요:
-- `KEYSTORE_BASE64`: release keystore base64 인코딩
-- `KEYSTORE_PASSWORD`
-- `KEY_ALIAS`
-- `KEY_PASSWORD`
+Secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
 
 ---
 
 ## 다른 단말에서 작업 시작하기
 
 ```bash
-# 1. 클론
 git clone https://github.com/caifyhelp-cmyk/caify-product.git
-cd caify-product
-
-# 2. Flutter 의존성
-cd flutter-app
-flutter pub get
-
-# 3. 로컬 서버 (선택)
-cd ../mock-server
-npm install
-node server.js
-
-# 4. 앱 빌드 (디버그)
-cd ../flutter-app
-flutter run
-
-# 5. APK 릴리즈 빌드는 GitHub Actions에 맡기기
-git push  # → 자동 빌드
+cd caify-product/flutter-app && flutter pub get
+cd ../mock-server && npm install && node server.js   # 로컬 서버 (선택)
+cd ../flutter-app && flutter run                     # 디버그 빌드
+git push                                             # → Actions 자동 빌드
 ```
