@@ -3,29 +3,32 @@
  * 실제 PHP 서버(caify.ai) 구조를 그대로 미러링하는 테스트 서버
  *
  * 실제 DB 테이블: ai_posts (id, customer_id, prompt_id, prompt_node_id,
- *                  title, subject, intro, html, naver_html, status, posting_date, created_at)
+ * title, subject, intro, html, naver_html, status, posting_date, created_at)
  *
  * status: 0=대기(관리자 미승인), 1=승인완료, 2=발행완료(publishing done - mock 추가)
  * posting_date: Naver 발행 시각 (NULL=미발행)
  *
  * 주요 엔드포인트 (Electron tray + Flutter app 연동):
- *   GET  /api/posts?status=ready&member_pk=X   → 발행 대기 포스트 목록
- *   POST /api/posts                             → n8n이 AI 생성 포스트 저장
- *   POST /api/posts/:id/published               → 발행 완료 기록
- *   POST /api/posts/:id/failed                  → 발행 실패 기록
- *   GET  /api/post_meta?id=X                    → 고객 프롬프트 메타데이터
- *   POST /member/login                          → 로그인 (Bearer 토큰 발급)
- *   GET  /admin/posts                           → 관리자: 전체 포스트 조회
- *   POST /admin/posts/:id/approve               → 관리자: 포스트 승인
+ * GET /api/posts?status=ready&member_pk=X → 발행 대기 포스트 목록
+ * POST /api/posts → n8n이 AI 생성 포스트 저장
+ * POST /api/posts/:id/published → 발행 완료 기록
+ * POST /api/posts/:id/failed → 발행 실패 기록
+ * GET /api/post_meta?id=X → 고객 프롬프트 메타데이터
+ * POST /member/login → 로그인 (Bearer 토큰 발급)
+ * GET /admin/posts → 관리자: 전체 포스트 조회
+ * POST /admin/posts/:id/approve → 관리자: 포스트 승인
  *
  * 사용법:
- *   npm install && npm start
- *   → http://localhost:3030
+ * npm install && npm start
+ * → http://localhost:3030
  */
 
 'use strict';
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+
 const app = express();
 const PORT = process.env.PORT || 3030;
 
@@ -41,59 +44,61 @@ app.use((req, res, next) => {
   next();
 });
 
-// ── 인메모리 DB ──────────────────────────────────────────────────
-// caify_member 테이블 (실제: id=PK/member_pk, member_id=로그인ID)
-const members = [
-  {
-    id: 1,
-    member_id: 'testuser',
-    passwd: 'password123',         // 실서버: password_hash()
-    company_name: '테스트 치과',
-    api_token: 'mock-token-testuser',
-  },
-  {
-    id: 2,
-    member_id: 'dental2',
-    passwd: 'password123',
-    company_name: '강남 치과의원',
-    api_token: 'mock-token-dental2',
-  },
-  {
-    id: 10,                        // 관리자 (실서버: id=10)
-    member_id: 'admin',
-    passwd: 'adminpass',
-    company_name: 'Caify 관리자',
-    api_token: 'mock-token-admin',
-  },
-];
+// ── 파일 기반 영속화 (Render 재시작 시에도 데이터 유지) ──────────
+// Render에서는 /tmp 또는 프로젝트 내 data/ 디렉터리에 저장
+// 실서버 전환 시 이 블록을 DB 연결로 교체하면 됨
+const DATA_DIR = path.join(__dirname, 'data');
+const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-// ai_posts 테이블 (실제 PHP 구조 그대로)
-let posts = [
+function loadDb() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('[db] 파일 로드 실패, 기본 데이터 사용:', e.message);
+  }
+  return null;
+}
+
+function saveDb() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(DB_FILE, JSON.stringify({ posts, messages, nextPostId, nextMsgId }, null, 2));
+  } catch (e) {
+    console.warn('[db] 파일 저장 실패:', e.message);
+  }
+}
+
+// ── 기본 데이터 (DB 파일 없을 때 초기값) ─────────────────────────
+const DEFAULT_POSTS = [
   {
     id: 1,
     customer_id: 1,
     prompt_id: 101,
     prompt_node_id: 'node_abc123',
-    title: '[샘플] 치아 임플란트 완전 가이드 2026',
+    title: '[테스트] 치아 임플란트 완전 가이드 2026',
     subject: '임플란트',
     intro: '임플란트가 고민이신 분들을 위한 핵심 정보',
-    html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p>',
-    naver_html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>임플란트는 자연치아와 가장 유사한 기능을 회복할 수 있는 시술입니다.</p><img src="https://picsum.photos/seed/caify_test/800/400" alt="임플란트 시술 예시" style="max-width:100%;height:auto;display:block;margin:16px 0"><p>🦷 [Caify 자동입력 테스트] 이미지가 네이버 라이브러리에 등록됐는지 확인하세요.</p>',
-    tags: ['임플란트', '강남치과', '임플란트비용'],
-    status: 1,          // 1=승인완료
-    posting_date: null, // null=아직 미발행
-    created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3일 전
+    html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스럽고 효과적인 대체 방법입니다.</p><p>임플란트는 자연치아와 가장 유사한 기능을 회복할 수 있는 시술로, 저작 기능과 심미성을 동시에 만족시킵니다.</p><h2>임플란트 시술 과정</h2><p>1단계: 정밀 검진 및 CT 촬영으로 뼈 상태를 확인합니다.</p><p>2단계: 잇몸 뼈에 티타늄 픽스처를 식립합니다.</p><p>3단계: 3~6개월 골유착 기간을 거칩니다.</p><p>4단계: 지대주와 크라운을 연결하여 최종 보철을 완성합니다.</p><img src="https://picsum.photos/seed/implant2026/800/400" alt="임플란트 시술 과정" style="max-width:100%;height:auto;display:block;margin:16px 0"><h2>비용 및 주의사항</h2><p>임플란트 비용은 1개당 100~150만 원 수준이며, 건강보험 적용 시 본인부담금이 대폭 줄어듭니다.</p><p>당뇨·골다공증 환자는 시술 전 반드시 전문의 상담이 필요합니다.</p><p>📞 [Caify 자동입력 테스트] 타이틀·본문·태그·이미지가 모두 정상 삽입됐는지 확인하세요.</p>',
+    naver_html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스럽고 효과적인 대체 방법입니다.</p><p>임플란트는 자연치아와 가장 유사한 기능을 회복할 수 있는 시술로, 저작 기능과 심미성을 동시에 만족시킵니다.</p><h2>임플란트 시술 과정</h2><p>1단계: 정밀 검진 및 CT 촬영으로 뼈 상태를 확인합니다.</p><p>2단계: 잇몸 뼈에 티타늄 픽스처를 식립합니다.</p><p>3단계: 3~6개월 골유착 기간을 거칩니다.</p><p>4단계: 지대주와 크라운을 연결하여 최종 보철을 완성합니다.</p><img src="https://picsum.photos/seed/implant2026/800/400" alt="임플란트 시술 과정" style="max-width:100%;height:auto;display:block;margin:16px 0"><h2>비용 및 주의사항</h2><p>임플란트 비용은 1개당 100~150만 원 수준이며, 건강보험 적용 시 본인부담금이 대폭 줄어듭니다.</p><p>당뇨·골다공증 환자는 시술 전 반드시 전문의 상담이 필요합니다.</p><p>📞 [Caify 자동입력 테스트] 타이틀·본문·태그·이미지가 모두 정상 삽입됐는지 확인하세요.</p>',
+    tags: ['임플란트', '강남치과', '임플란트비용', '치아임플란트', '임플란트잘하는곳'],
+    status: 1,
+    posting_date: null,
+    created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 2,
     customer_id: 1,
     prompt_id: 101,
     prompt_node_id: 'node_abc124',
-    title: '[샘플] 스케일링 꼭 받아야 할까? 전문가 조언',
+    title: '[테스트] 스케일링 꼭 받아야 할까? 치과 전문의 조언',
     subject: '스케일링',
     intro: '스케일링의 필요성과 주기 안내',
-    html: '<h2>스케일링 주기</h2><p>6개월에 한 번 권장합니다.</p>',
-    naver_html: '<div class="se-main-container"><h2>스케일링 주기</h2><p>6개월에 한 번 권장합니다.</p></div>',
+    html: '<h2>스케일링이란?</h2><p>스케일링은 치아 표면과 잇몸 사이에 쌓인 치석을 전문 기구로 제거하는 시술입니다.</p><p>치석은 칫솔질만으로는 제거되지 않으며, 방치하면 잇몸 질환과 충치의 원인이 됩니다.</p><img src="https://picsum.photos/seed/scaling2026/800/400" alt="스케일링 시술" style="max-width:100%;height:auto;display:block;margin:16px 0"><h2>스케일링 권장 주기</h2><p>건강한 성인은 6개월에 1회, 잇몸 질환이 있는 경우 3개월에 1회 권장합니다.</p><p>건강보험 적용 시 연 1회 본인부담금 약 1만 5천 원으로 받을 수 있습니다.</p><p>🦷 [Caify 자동입력 테스트 v2]</p>',
+    naver_html: '<h2>스케일링이란?</h2><p>스케일링은 치아 표면과 잇몸 사이에 쌓인 치석을 전문 기구로 제거하는 시술입니다.</p><p>치석은 칫솔질만으로는 제거되지 않으며, 방치하면 잇몸 질환과 충치의 원인이 됩니다.</p><img src="https://picsum.photos/seed/scaling2026/800/400" alt="스케일링 시술" style="max-width:100%;height:auto;display:block;margin:16px 0"><h2>스케일링 권장 주기</h2><p>건강한 성인은 6개월에 1회, 잇몸 질환이 있는 경우 3개월에 1회 권장합니다.</p><p>건강보험 적용 시 연 1회 본인부담금 약 1만 5천 원으로 받을 수 있습니다.</p><p>🦷 [Caify 자동입력 테스트 v2]</p>',
+    tags: ['스케일링', '스케일링주기', '치석제거', '잇몸치료', '강남치과'],
     status: 1,
     posting_date: null,
     created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
@@ -108,7 +113,7 @@ let posts = [
     intro: '미백 방법 비교',
     html: '<p>미백 내용</p>',
     naver_html: '<p>미백 내용</p>',
-    status: 0,          // 0=대기(미승인)
+    status: 0,
     posting_date: null,
     created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
   },
@@ -125,6 +130,88 @@ let posts = [
     status: 1,
     posting_date: null,
     created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+const DEFAULT_MESSAGES = [
+  {
+    id: 1,
+    member_pk: 1,
+    type: 'post.created',
+    is_system: true,
+    text: '안녕하세요! 새 블로그 포스팅이 준비됐어요 🎉\n\n"치아 임플란트 완전 가이드 2026"\n\n내용을 확인하고 네이버 블로그에 발행해 보세요!',
+    post_id: 1,
+    post_title: '[샘플] 치아 임플란트 완전 가이드 2026',
+    post_html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>임플란트는 <strong>자연치아와 가장 유사한 기능</strong>을 회복할 수 있는 시술입니다.</p>',
+    meta: null,
+    actions: [
+      { label: '포스팅 보기', action_key: 'view_post' },
+      { label: '에디터 열기', action_key: 'publish_post' },
+    ],
+    read: false,
+    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 2,
+    member_pk: 1,
+    type: 'rank.check',
+    is_system: true,
+    text: '📊 "임플란트 강남" 키워드 순위 결과입니다.\n\n7일 전: 측정 불가 → 현재: 12위\n\n꾸준히 포스팅하면 상위 노출이 가능합니다!',
+    post_id: null,
+    post_title: null,
+    post_html: null,
+    meta: { keyword: '임플란트 강남', rank: 12, prev_rank: null, check_day: 7 },
+    actions: [],
+    read: false,
+    created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 3,
+    member_pk: 1,
+    type: 'strategy.weekly',
+    is_system: true,
+    text: '📋 이번 주 콘텐츠 전략 요약\n\n✅ 발행 예정 키워드\n• 스케일링 주기\n• 임플란트 비용\n• 치아교정 기간\n\n⏱ 예상 발행: 월/수/금 오전 10시',
+    post_id: null,
+    post_title: null,
+    post_html: null,
+    meta: { week: '2026-W17' },
+    actions: [],
+    read: true,
+    created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+// 파일에서 복원하거나 기본값 사용
+const savedDb = loadDb();
+let posts = savedDb?.posts ?? DEFAULT_POSTS;
+let messages = savedDb?.messages ?? DEFAULT_MESSAGES;
+let nextPostId = savedDb?.nextPostId ?? 5;
+let nextMsgId = savedDb?.nextMsgId ?? 4;
+
+// ── 인메모리 DB (members는 자격증명이므로 코드에서 관리) ──────────
+// caify_member 테이블 (실제: id=PK/member_pk, member_id=로그인ID)
+// 실서버 전환 시: DB 조회로 교체
+const members = [
+  {
+    id: 1,
+    member_id: 'testuser',
+    passwd: 'password123', // 실서버: password_hash()
+    company_name: '테스트 치과',
+    api_token: 'mock-token-testuser',
+  },
+  {
+    id: 2,
+    member_id: 'dental2',
+    passwd: 'password123',
+    company_name: '강남 치과의원',
+    api_token: 'mock-token-dental2',
+  },
+  {
+    id: 10, // 관리자 (실서버: id=10)
+    member_id: 'admin',
+    passwd: 'adminpass',
+    company_name: 'Caify 관리자',
+    api_token: 'mock-token-admin',
   },
 ];
 
@@ -184,58 +271,6 @@ const prompts = [
   },
 ];
 
-let nextPostId = 5;
-
-// ── 채팅 메시지 (시스템 → 고객 / 고객 → 시스템) ────────────────
-let messages = [
-  {
-    id: 1,
-    member_pk: 1,
-    type: 'post.created',
-    is_system: true,
-    text: '안녕하세요! 새 블로그 포스팅이 준비됐어요 🎉\n\n"치아 임플란트 완전 가이드 2026"\n\n내용을 확인하고 네이버 블로그에 발행해 보세요!',
-    post_id: 1,
-    post_title: '[샘플] 치아 임플란트 완전 가이드 2026',
-    post_html: '<h2>임플란트란?</h2><p>치아를 잃었을 때 가장 자연스러운 대체 방법입니다.</p><p>임플란트는 <strong>자연치아와 가장 유사한 기능</strong>을 회복할 수 있는 시술입니다.</p>',
-    meta: null,
-    actions: [
-      { label: '포스팅 보기', action_key: 'view_post' },
-      { label: '에디터 열기', action_key: 'publish_post' },
-    ],
-    read: false,
-    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 2,
-    member_pk: 1,
-    type: 'rank.check',
-    is_system: true,
-    text: '📊 "임플란트 강남" 키워드 순위 결과입니다.\n\n7일 전: 측정 불가 → 현재: 12위\n\n꾸준히 포스팅하면 상위 노출이 가능합니다!',
-    post_id: null,
-    post_title: null,
-    post_html: null,
-    meta: { keyword: '임플란트 강남', rank: 12, prev_rank: null, check_day: 7 },
-    actions: [],
-    read: false,
-    created_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 3,
-    member_pk: 1,
-    type: 'strategy.weekly',
-    is_system: true,
-    text: '📋 이번 주 콘텐츠 전략 요약\n\n✅ 발행 예정 키워드\n• 스케일링 주기\n• 임플란트 비용\n• 치아교정 기간\n\n⏱ 예상 발행: 월/수/금 오전 10시',
-    post_id: null,
-    post_title: null,
-    post_html: null,
-    meta: { week: '2026-W17' },
-    actions: [],
-    read: true,
-    created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
-let nextMsgId = 4;
-
 // ── 인증 헬퍼 ────────────────────────────────────────────────────
 // Electron/Flutter: Authorization: Bearer <api_token>
 function getMemberByToken(req) {
@@ -258,9 +293,10 @@ app.use((req, res, next) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// POST /member/login  →  { ok, member_pk, member_id, api_token }
+// POST /member/login → { ok, member_pk, member_id, api_token }
 // Electron 설정창 / Flutter 설정화면에서 최초 로그인 시 사용
 // ════════════════════════════════════════════════════════════════
+
 app.post('/member/login', (req, res) => {
   const { member_id, passwd } = req.body;
   const member = members.find(m => m.member_id === member_id && m.passwd === passwd);
@@ -281,12 +317,13 @@ app.post('/member/login', (req, res) => {
 // 발행 대기 목록: status=1(승인) AND posting_date IS NULL
 // Electron tray: 60초마다 폴링 / Flutter: 목록 화면
 // ════════════════════════════════════════════════════════════════
+
 app.get('/api/posts', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
   const memberPk = parseInt(req.query.member_pk || '0', 10);
-  const status   = req.query.status || '';
+  const status = req.query.status || '';
 
   // member_pk 검증: 관리자가 아니면 본인 포스트만
   if (!isAdmin(member) && memberPk !== member.id) {
@@ -304,7 +341,7 @@ app.get('/api/posts', (req, res) => {
   res.json(result.map(p => ({
     id: p.id,
     title: p.title,
-    html: p.naver_html,   // Electron/Flutter가 주입하는 HTML = naver_html
+    html: p.naver_html, // Electron/Flutter가 주입하는 HTML = naver_html
     tags: p.tags || [],
     status: p.status,
     posting_date: p.posting_date,
@@ -313,10 +350,11 @@ app.get('/api/posts', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// POST /api/posts   (= 실서버 /api/index.php)
+// POST /api/posts (= 실서버 /api/index.php)
 // n8n이 AI 생성 포스트를 저장할 때 사용
 // Body: { title, html, naverHtml, customer_id, prompt_id, promptNodeId, subject?, intro? }
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/posts', (req, res) => {
   const { title, html, naverHtml, customer_id, prompt_id, promptNodeId, subject, intro } = req.body;
 
@@ -337,14 +375,14 @@ app.post('/api/posts', (req, res) => {
     intro: intro || null,
     html: html || '',
     naver_html: naverHtml,
-    status: 0,            // 0=대기(관리자 승인 필요)
+    status: 0, // 0=대기(관리자 승인 필요)
     posting_date: null,
     created_at: new Date().toISOString(),
   };
 
   posts.push(post);
-
-  console.log(`  [new post] id=${post.id} customer=${customer_id} title="${title}"`);
+  saveDb();
+  console.log(` [new post] id=${post.id} customer=${customer_id} title="${title}"`);
 
   res.json({
     ok: true,
@@ -358,13 +396,13 @@ app.post('/api/posts', (req, res) => {
 // Electron tray / Flutter: 발행 완료 시 호출
 // 실서버: posting_date = NOW() 설정 (output_publish_guard.php의 mark_posting 동일)
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/posts/:id/published', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
   const postId = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === postId);
-
   if (!post) return res.status(404).json({ ok: false, error: '포스트를 찾을 수 없습니다.' });
 
   // 관리자가 아니면 본인 포스트만
@@ -373,8 +411,8 @@ app.post('/api/posts/:id/published', (req, res) => {
   }
 
   post.posting_date = new Date().toISOString();
-
-  console.log(`  [published] id=${postId} title="${post.title}" at ${post.posting_date}`);
+  saveDb();
+  console.log(` [published] id=${postId} title="${post.title}" at ${post.posting_date}`);
 
   res.json({ ok: true, posting_date: post.posting_date });
 });
@@ -383,13 +421,13 @@ app.post('/api/posts/:id/published', (req, res) => {
 // POST /api/posts/:id/failed
 // Electron tray / Flutter: 발행 실패 시 호출 (재시도 가능하도록 posting_date 유지)
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/posts/:id/failed', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
   const postId = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === postId);
-
   if (!post) return res.status(404).json({ ok: false, error: '포스트를 찾을 수 없습니다.' });
 
   if (!isAdmin(member) && post.customer_id !== member.id) {
@@ -397,16 +435,18 @@ app.post('/api/posts/:id/failed', (req, res) => {
   }
 
   const reason = req.body.reason || '알 수 없는 오류';
+
   // 실패: posting_date를 null로 유지 → 재시도 가능
-  console.log(`  [failed] id=${postId} reason="${reason}"`);
+  console.log(` [failed] id=${postId} reason="${reason}"`);
 
   res.json({ ok: true, message: '실패 기록 완료 (재시도 가능)' });
 });
 
 // ════════════════════════════════════════════════════════════════
-// GET /api/post_meta?id=X  (= 실서버 /api/post_meta/index.php?id=X)
+// GET /api/post_meta?id=X (= 실서버 /api/post_meta/index.php?id=X)
 // n8n이 고객 프롬프트 메타데이터를 가져올 때 사용
 // ════════════════════════════════════════════════════════════════
+
 app.get('/api/post_meta', (req, res) => {
   const id = parseInt(req.query.id || '0', 10);
   if (id <= 0) return res.json({ ok: false, error: 'ID가 필요합니다.' });
@@ -475,8 +515,9 @@ app.get('/api/post_meta', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// GET /api/posts/:id  — 단일 포스트 조회 (brain-agent 검토 UI용)
+// GET /api/posts/:id — 단일 포스트 조회 (brain-agent 검토 UI용)
 // ════════════════════════════════════════════════════════════════
+
 app.get('/api/posts/:id', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
@@ -504,9 +545,10 @@ app.get('/api/posts/:id', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// PATCH /api/posts/:id  — 포스트 내용 수정 (brain-agent 대화형 수정 후 저장)
+// PATCH /api/posts/:id — 포스트 내용 수정 (brain-agent 대화형 수정 후 저장)
 // Body: { title?, html? }
 // ════════════════════════════════════════════════════════════════
+
 app.patch('/api/posts/:id', (req, res) => {
   const member = getMemberByToken(req);
   if (!member || !isAdmin(member)) {
@@ -520,17 +562,20 @@ app.patch('/api/posts/:id', (req, res) => {
   if (req.body.title !== undefined) post.title = req.body.title;
   if (req.body.html !== undefined) {
     post.html = req.body.html;
-    post.naver_html = req.body.html; // brain-agent 수정분은 naver_html에도 반영
+    post.naver_html = req.body.html;
   }
+  if (req.body.tags !== undefined) post.tags = req.body.tags;
 
-  console.log(`  [updated] id=${postId} title="${post.title}"`);
+  saveDb();
+  console.log(` [updated] id=${postId} title="${post.title}"`);
   res.json({ ok: true, message: '수정 완료' });
 });
 
 // ════════════════════════════════════════════════════════════════
-// POST /api/posts/:id/reject  — 포스트 반려 (status 0으로 되돌리기)
+// POST /api/posts/:id/reject — 포스트 반려 (status 0으로 되돌리기)
 // brain-agent 검토 UI에서 반려 시 사용
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/posts/:id/reject', (req, res) => {
   const member = getMemberByToken(req);
   if (!member || !isAdmin(member)) {
@@ -543,15 +588,17 @@ app.post('/api/posts/:id/reject', (req, res) => {
 
   const reason = req.body.reason || '';
   post.status = 0;
-  console.log(`  [rejected] id=${postId} reason="${reason}"`);
 
+  saveDb();
+  console.log(` [rejected] id=${postId} reason="${reason}"`);
   res.json({ ok: true, message: '반려 완료' });
 });
 
 // ════════════════════════════════════════════════════════════════
-// GET /api/messages?member_pk=X&after_id=Y  — 채팅 메시지 목록
+// GET /api/messages?member_pk=X&after_id=Y — 채팅 메시지 목록
 // Flutter ChatScreen이 15초마다 폴링
 // ════════════════════════════════════════════════════════════════
+
 app.get('/api/messages', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
@@ -585,8 +632,9 @@ app.get('/api/messages', (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// POST /api/messages  — 고객이 직접 텍스트 입력 시
+// POST /api/messages — 고객이 직접 텍스트 입력 시
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/messages', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
@@ -610,6 +658,7 @@ app.post('/api/messages', (req, res) => {
     read: true,
     created_at: new Date().toISOString(),
   };
+
   messages.push(msg);
 
   // 자동 응답 (개발 편의)
@@ -623,15 +672,18 @@ app.post('/api/messages', (req, res) => {
     meta: null, actions: [], read: false,
     created_at: new Date(Date.now() + 1000).toISOString(),
   };
-  messages.push(autoReply);
 
-  console.log(`  [msg] member=${pk} text="${text.trim().substring(0, 40)}"`);
+  messages.push(autoReply);
+  saveDb();
+  console.log(` [msg] member=${pk} text="${text.trim().substring(0, 40)}"`);
+
   res.status(201).json({ ok: true, id: msg.id });
 });
 
 // ════════════════════════════════════════════════════════════════
-// POST /api/messages/:id/action  — 버튼 액션 (view_post, publish_post 등)
+// POST /api/messages/:id/action — 버튼 액션 (view_post, publish_post 등)
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/messages/:id/action', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
@@ -641,31 +693,40 @@ app.post('/api/messages/:id/action', (req, res) => {
   if (!msg) return res.status(404).json({ ok: false, error: '메시지를 찾을 수 없습니다.' });
 
   const { action_key } = req.body;
-  console.log(`  [action] msg=${msgId} action=${action_key}`);
+
+  console.log(` [action] msg=${msgId} action=${action_key}`);
 
   msg.read = true;
+  saveDb();
+
   res.json({ ok: true });
 });
 
 // ════════════════════════════════════════════════════════════════
-// POST /api/messages/:id/read  — 읽음 처리
+// POST /api/messages/:id/read — 읽음 처리
 // ════════════════════════════════════════════════════════════════
+
 app.post('/api/messages/:id/read', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
   const msgId = parseInt(req.params.id, 10);
   const msg = messages.find(m => m.id === msgId);
-  if (msg) msg.read = true;
+  if (msg) {
+    msg.read = true;
+    saveDb();
+  }
+
   res.json({ ok: true });
 });
 
 // ════════════════════════════════════════════════════════════════
 // 관리자 전용 API
-// GET  /admin/posts                    → 전체 포스트 목록
-// POST /admin/posts/:id/approve        → 포스트 승인 (status 0→1)
+// GET /admin/posts → 전체 포스트 목록
+// POST /admin/posts/:id/approve → 포스트 승인 (status 0→1)
 // POST /api/posts/:id/approve (별칭)
 // ════════════════════════════════════════════════════════════════
+
 app.get('/admin/posts', (req, res) => {
   const member = getMemberByToken(req);
   if (!member || !isAdmin(member)) {
@@ -696,15 +757,18 @@ app.post('/admin/posts/:id/approve', (req, res) => {
   if (!post) return res.status(404).json({ ok: false, error: '포스트를 찾을 수 없습니다.' });
 
   post.status = 1;
-  console.log(`  [approved] id=${postId} title="${post.title}"`);
+
+  saveDb();
+  console.log(` [approved] id=${postId} title="${post.title}"`);
 
   res.json({ ok: true, message: '승인 완료' });
 });
 
 // ════════════════════════════════════════════════════════════════
-// GET /api/version  — 앱 버전 및 APK 다운로드 URL
+// GET /api/version — 앱 버전 및 APK 다운로드 URL
 // Flutter 앱이 시작 시 체크. 현재 버전보다 높으면 업데이트 다이얼로그 표시.
 // ════════════════════════════════════════════════════════════════
+
 app.get('/api/version', async (req, res) => {
   try {
     const response = await fetch(
@@ -718,13 +782,37 @@ app.get('/api/version', async (req, res) => {
     const apk_url = apk
       ? apk.browser_download_url
       : `https://github.com/caifyhelp-cmyk/caify-product/releases/download/${tag}/caify_${version}.apk`;
+
     res.json({ version, apk_url, notes: release.body ? release.body.split('\n')[0] : '', force: false });
   } catch (e) {
     res.json({ version: '1.0.1', apk_url: 'https://github.com/caifyhelp-cmyk/caify-product/releases/latest', notes: '', force: false });
   }
 });
 
+// ════════════════════════════════════════════════════════════════
+// POST /admin/reset-db — db.json 삭제 후 DEFAULT 데이터로 초기화
+// ════════════════════════════════════════════════════════════════
+
+app.post('/admin/reset-db', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member || !isAdmin(member)) {
+    return res.status(403).json({ ok: false, error: '관리자 권한이 필요합니다.' });
+  }
+  try {
+    if (fs.existsSync(DB_FILE)) fs.unlinkSync(DB_FILE);
+    posts.length = 0; DEFAULT_POSTS.forEach(p => posts.push(JSON.parse(JSON.stringify(p))));
+    messages.length = 0; DEFAULT_MESSAGES.forEach(m => messages.push(JSON.parse(JSON.stringify(m))));
+    nextPostId = 5; nextMsgId = 4;
+    saveDb();
+    console.log('[admin] DB 리셋 완료');
+    res.json({ ok: true, message: 'DB 초기화 완료', posts: posts.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── 상태 확인 ────────────────────────────────────────────────────
+
 app.get('/', (req, res) => {
   res.json({
     ok: true,
@@ -734,17 +822,17 @@ app.get('/', (req, res) => {
     members_count: members.length,
     endpoints: [
       'POST /member/login',
-      'GET  /api/posts?status=ready&member_pk=X',
+      'GET /api/posts?status=ready&member_pk=X',
       'POST /api/posts',
       'POST /api/posts/:id/published',
       'POST /api/posts/:id/failed',
-      'GET  /api/post_meta?id=X',
-      'GET  /api/posts/:id',
+      'GET /api/post_meta?id=X',
+      'GET /api/posts/:id',
       'PATCH /api/posts/:id',
       'POST /api/posts/:id/reject',
-      'GET  /admin/posts',
+      'GET /admin/posts',
       'POST /admin/posts/:id/approve',
-      'GET  /api/messages?member_pk=X&after_id=Y',
+      'GET /api/messages?member_pk=X&after_id=Y',
       'POST /api/messages',
       'POST /api/messages/:id/action',
       'POST /api/messages/:id/read',
@@ -753,26 +841,21 @@ app.get('/', (req, res) => {
 });
 
 // ── 서버 시작 ────────────────────────────────────────────────────
+
 app.listen(PORT, () => {
+  const fromFile = fs.existsSync(DB_FILE);
   console.log('');
-  console.log('  ╔══════════════════════════════════════════╗');
-  console.log('  ║   Caify Mock API Server                  ║');
-  console.log(`  ║   http://localhost:${PORT}                 ║`);
-  console.log('  ╚══════════════════════════════════════════╝');
+  console.log(' ╔══════════════════════════════════════════╗');
+  console.log(' ║       Caify Mock API Server              ║');
+  console.log(` ║  http://localhost:${PORT}                  ║`);
+  console.log(' ╚══════════════════════════════════════════╝');
   console.log('');
-  console.log('  테스트 계정:');
-  console.log('    member_id: testuser  / passwd: password123');
-  console.log('    member_id: dental2   / passwd: password123');
-  console.log('    member_id: admin     / passwd: adminpass  (관리자)');
+  console.log(` 데이터: ${fromFile ? `파일 복원 (${DB_FILE})` : '기본값 사용'}`);
+  console.log(` posts=${posts.length}개, messages=${messages.length}개`);
   console.log('');
-  console.log('  API 토큰:');
-  console.log('    testuser → mock-token-testuser');
-  console.log('    dental2  → mock-token-dental2');
-  console.log('    admin    → mock-token-admin');
-  console.log('');
-  console.log('  초기 데이터:');
-  console.log('    post id=1,2: testuser 발행대기 (status=1)');
-  console.log('    post id=3:   testuser 미승인 (status=0)');
-  console.log('    post id=4:   dental2  발행대기 (status=1)');
+  console.log(' 테스트 계정:');
+  console.log(' member_id: testuser / passwd: password123');
+  console.log(' member_id: dental2 / passwd: password123');
+  console.log(' member_id: admin / passwd: adminpass (관리자)');
   console.log('');
 });

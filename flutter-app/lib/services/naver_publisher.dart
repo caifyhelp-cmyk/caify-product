@@ -22,6 +22,53 @@ class NaverPublisher {
     })()
   ''';
 
+  // ── SE3 이프레임 내부 API 진단 ───────────────────────────────────
+  static String jsDebugSE3() => r'''
+    (function() {
+      const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                     document.querySelector("iframe#mainFrame") ||
+                     document.querySelector("iframe");
+      let iDoc; try { iDoc = iframe ? iframe.contentDocument : null; } catch(e) { return 'cors'; }
+      if (!iDoc) return 'no_iframe_doc';
+
+      const w = iframe.contentWindow;
+
+      // SmartEditor 상세 구조 탐색
+      const sm = w.SmartEditor;
+      const smType = typeof sm;
+      const smIsArr = Array.isArray(sm);
+      const smLen = smIsArr ? sm.length : -1;
+      const smKeys = sm && !smIsArr ? Object.keys(sm).slice(0,15).join(',') : '';
+      // _editors 상세 탐색
+      let editorsInfo = 'no_ed';
+      if (sm && sm._editors) {
+        const ed = sm._editors;
+        const edIsArr = Array.isArray(ed);
+        const edLen = edIsArr ? ed.length : -1;
+        const edKeys = !edIsArr ? Object.keys(ed).slice(0,10).join(',') : '';
+        const ed0 = edIsArr ? ed[0] : (Object.values(ed)[0] || null);
+        const ed0Keys = ed0 ? Object.keys(ed0).slice(0,15).join(',') : 'null';
+        editorsInfo = 'isArr=' + edIsArr + ',len=' + edLen + ',keys=[' + edKeys + '],ed0=[' + ed0Keys + ']';
+      }
+      const smInfo = 'type=' + smType + ',smKeys=[' + smKeys + '],editors:{' + editorsInfo + '}';
+
+      // nhn 네임스페이스
+      const nhn = w.nhn;
+      const nhnKeys = nhn ? Object.keys(nhn).slice(0,8).join(',') : 'null';
+
+      // SE 네임스페이스
+      const SE = w.SE;
+      const seNsKeys = SE ? Object.keys(SE).slice(0,8).join(',') : 'null';
+
+      // contenteditable 요소들
+      const ces = Array.from(iDoc.querySelectorAll('[contenteditable]')).map(el =>
+        el.tagName + '[ce=' + el.getAttribute('contenteditable') + ']'
+      ).join('|');
+
+      return 'SM:{' + smInfo + '} nhn:[' + nhnKeys + '] SE:[' + seNsKeys + '] ces=[' + ces + ']';
+    })()
+  ''';
+
   // ── 페이지 진단 ───────────────────────────────────────────────
   static String jsDiagnose() => r'''
     (function() {
@@ -108,68 +155,134 @@ class NaverPublisher {
           return 'ok_input';
         }
 
-        // 방법 B: SE3 contenteditable
-        const doc = $_docFinder;
-        if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-title-text .se-text-paragraph') ||
-          doc.querySelector('.se-section-documentTitle .se-text-paragraph') ||
-          doc.querySelector('.se-title-text [contenteditable]') ||
-          doc.querySelector('.se-title-text') ||
-          doc.querySelector('[data-placeholder*="제목"][contenteditable="true"]') ||
-          doc.querySelector('[aria-label*="제목"][contenteditable="true"]');
-        if (!el) return 'no_title_el';
+        // 방법 B: iframe script 주입 — iframe 자체 컨텍스트에서 paste로 SE3 내부 모델 갱신
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+        if (!iDoc) return 'no_doc';
 
-        el.focus();
-
-        // 방법 B-1: createRange + execCommand (가장 호환성 좋음)
-        try {
-          const win = doc.defaultView || window;
-          const sel = win.getSelection();
-          const range = doc.createRange();
-          range.selectNodeContents(el);
-          sel.removeAllRanges();
-          sel.addRange(range);
-          if (doc.execCommand('insertText', false, "$escaped")) return 'ok_exec';
-        } catch(e) {}
-
-        // 방법 B-2: innerText + InputEvent
-        try {
-          el.focus();
-          el.innerText = "$escaped";
-          el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: "$escaped" }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          return 'ok_innerText';
-        } catch(e) {}
-
-        // 방법 B-3: textContent 최후 수단
-        el.textContent = "$escaped";
-        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        return 'ok_textContent';
+        // 데이터를 document 프로퍼티로 전달 (스크립트 내 문자열 이스케이프 불필요)
+        iDoc.__caifyTitle = "$escaped";
+        iDoc.__caifyResult = null;
+        const s = iDoc.createElement('script');
+        s.textContent = '(function(){'
+          + 'try{'
+          + 'var t=document.__caifyTitle;'
+          // 1순위: SmartEditor 내부 API — 제목 모듈
+          + 'var _sm=window.SmartEditor;'
+          + 'var se3=null;'
+          // _editors 배열 또는 맵에서 직접 접근
+          + 'if(!se3&&_sm&&_sm._editors){'
+          + '  try{var _ed=_sm._editors;'
+          + '    se3=Array.isArray(_ed)?_ed[0]:(Object.values(_ed)[0]||null);'
+          + '  }catch(e_ed){}'
+          + '}'
+          // getEditor() 호출
+          + 'if(!se3&&_sm){try{var _ge=_sm.getEditor();if(_ge&&typeof _ge==="object")se3=_ge;}catch(e_ge){}}'
+          // 배열이면 [0]
+          + 'if(!se3&&_sm&&Array.isArray(_sm)){se3=_sm[0]||null;}'
+          // SmartEditor 자체에 exec가 있으면 그대로 사용
+          + 'if(!se3&&_sm&&typeof _sm.exec==="function"){se3=_sm;}'
+          // se3 null이면 _editors 상태 로깅
+          + 'if(!se3){document.__caifyResult="se3_null:ed_len="+((_sm&&_sm._editors&&Array.isArray(_sm._editors))?_sm._editors.length:((_sm&&_sm._editors)?Object.keys(_sm._editors).length:"no_ed"));return;}'
+          + 'if(se3){'
+          // _documentService 통해 제목 설정
+          + '  var ds=se3._documentService;'
+          + '  if(ds){'
+          + '    var dsMethods=["setTitle","setDocumentTitle","updateTitle","changeTitle","setDocTitle"];'
+          + '    for(var di=0;di<dsMethods.length;di++){'
+          + '      try{if(typeof ds[dsMethods[di]]==="function"){ds[dsMethods[di]](t);document.__caifyResult="ok_ds:"+dsMethods[di];return;}}catch(dm){}'
+          + '    }'
+          + '  }'
+          // _papyrus 통해 제목 설정
+          + '  var pap=se3._papyrus;'
+          + '  if(pap){'
+          + '    var papTMethods=["setTitle","setDocumentTitle","setTitleContent"];'
+          + '    for(var pi=0;pi<papTMethods.length;pi++){'
+          + '      try{if(typeof pap[papTMethods[pi]]==="function"){pap[papTMethods[pi]](t);document.__caifyResult="ok_pap:"+papTMethods[pi];return;}}catch(pm){}'
+          + '    }'
+          + '  }'
+          // 서비스 메서드 목록 반환 (다음 진단용)
+          + '  var dsKeys=ds?Object.getOwnPropertyNames(Object.getPrototypeOf(ds)).filter(function(k){return k[0]!=="_";}).join(","):"null";'
+          + '  var papKeys=pap?Object.getOwnPropertyNames(Object.getPrototypeOf(pap)).filter(function(k){return k[0]!=="_";}).join(","):"null";'
+          + '  document.__caifyResult="se3_no_title:ds=["+dsKeys+"],pap=["+papKeys+"]";'
+          + '  return;'
+          + '}'
+          // 2순위: DOM 직접 수정 + se-is-empty 클래스 제거
+          + 'var titleP=document.querySelector(".se-title-text .se-text-paragraph")||document.querySelector(".se-title-text p")||document.querySelector(".se-section-documentTitle p");'
+          + 'if(!titleP){document.__caifyResult="no_title_p";return;}'
+          + 'var allCE=Array.from(document.querySelectorAll("[contenteditable=true]"));'
+          + 'var seEd=allCE.find(function(c){return c.contains(titleP);})||allCE[0];'
+          + 'if(seEd)seEd.focus();'
+          + 'var sel=window.getSelection(),r=document.createRange();'
+          + 'r.selectNodeContents(titleP);sel.removeAllRanges();sel.addRange(r);'
+          + 'titleP.dispatchEvent(new InputEvent("beforeinput",{bubbles:true,cancelable:true,inputType:"insertText",data:t}));'
+          + 'titleP.textContent=t;'
+          + 'titleP.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:t}));'
+          // se-is-empty 클래스 제거 — SE3 빈 상태 마커 제거
+          + 'var titleMod=titleP.closest(".__se-unit")||titleP.closest(".se-module");'
+          + 'if(titleMod)titleMod.classList.remove("se-is-empty");'
+          + 'if(seEd){seEd.dispatchEvent(new Event("input",{bubbles:true}));sel.removeAllRanges();seEd.blur();}'
+          + 'document.__caifyResult="ok_direct";'
+          + '}catch(e){document.__caifyResult="err:"+e.message;}'
+          + '})();';
+        (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
+        s.remove();
+        return iDoc.__caifyResult || 'null_result';
       })()
     ''';
   }
 
   // ── 본문 HTML 주입 ────────────────────────────────────────────
+  // SE3 paste 이벤트 방식: 이미지가 네이버 라이브러리에 자동 업로드됨
   static String jsInjectHtml(String html) {
     final escaped = _escapeJs(html);
     return '''
       (function() {
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-component.se-text .__se-node') ||
-          doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
-          doc.querySelector('[contenteditable="true"].se-text-paragraph') ||
-          doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
-          doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+
+        // 제목 영역 blur — 이전 단계에서 남은 커서 제거
+        const titleArea =
+          doc.querySelector('.se-title-text') ||
+          doc.querySelector('.se-section-documentTitle') ||
+          doc.querySelector('.se-module-documentTitle');
+        if (titleArea) {
+          const tce = titleArea.querySelector('[contenteditable="true"]');
+          if (tce && tce.blur) tce.blur();
+          const win2 = doc.defaultView || window;
+          win2.getSelection()?.removeAllRanges();
+        }
+
+        // 본문 요소 탐색 (제목 영역 제외 보장)
+        const candidates = [
+          doc.querySelector('.se-component.se-text [contenteditable="true"]'),
+          doc.querySelector('.se-section-text [contenteditable="true"]'),
+          doc.querySelector('.se-component.se-text .se-text-paragraph'),
+          doc.querySelector('[data-placeholder*="글감"][contenteditable]'),
+          doc.querySelector('[data-placeholder*="내용"][contenteditable]'),
+        ];
+        const el = candidates.find(c => {
+          if (!c) return false;
+          // 제목 영역 안에 있으면 제외
+          return !c.closest('.se-title-text, .se-section-documentTitle, .se-module-documentTitle');
+        });
         if (!el) return 'no_body_el';
 
+        // 커서를 본문으로 명시적 이동
+        el.click();
         el.focus();
+        const win = doc.defaultView || window;
+        const sel = win.getSelection();
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
 
-        // 방법 1: ClipboardEvent paste (이미지 포함 HTML에 가장 적합)
+        // ClipboardEvent paste (이미지 → 네이버 라이브러리 업로드)
         try {
           const dt = new DataTransfer();
           dt.setData('text/html', "$escaped");
@@ -192,33 +305,93 @@ class NaverPublisher {
       (function() {
         const doc = $_docFinder;
         if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-component.se-text .__se-node') ||
-          doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
-          doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
-          doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+
+        const candidates = [
+          doc.querySelector('.se-component.se-text [contenteditable="true"]'),
+          doc.querySelector('.se-section-text [contenteditable="true"]'),
+          doc.querySelector('.se-component.se-text .se-text-paragraph'),
+          doc.querySelector('[data-placeholder*="글감"][contenteditable]'),
+          doc.querySelector('[data-placeholder*="내용"][contenteditable]'),
+        ];
+        const el = candidates.find(c => {
+          if (!c) return false;
+          return !c.closest('.se-title-text, .se-section-documentTitle, .se-module-documentTitle');
+        });
         if (!el) return 'no_body_el';
 
-        // 이미 내용 있으면 skip
+        // placeholder 텍스트는 실제 내용이 아님 — SE3는 placeholder를 DOM에 직접 렌더링
+        const placeholder = (el.getAttribute('data-placeholder') || '').trim();
         const txt = (el.innerText || el.textContent || '').trim();
-        if (txt.length > 5) return 'already_filled:' + txt.substring(0, 30);
+        const isPlaceholder = txt === placeholder || txt === '글감과 함께 나의 일상을 기록해보세요!' || txt === '내용을 입력해주세요.';
+        if (txt.length > 5 && !isPlaceholder) return 'already_filled:' + txt.substring(0, 30);
 
-        el.focus();
+        // iframe script 주입으로 execCommand('insertHTML') 실행 — SE3 내부 모델 갱신
+        const iframe2 = document.querySelector("iframe[name='mainFrame']") ||
+                        document.querySelector("iframe#mainFrame") ||
+                        document.querySelector("iframe");
+        const inMain2 = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc2 = inMain2 ? document
+                    : (iframe2 ? (function(){try{return iframe2.contentDocument;}catch(e){return null;}}()) : null);
+        if (iDoc2) {
+          // HTML → SE3 paragraph[] 변환을 바깥(top-level) 컨텍스트에서 처리
+          // iframe 스크립트 안에서는 iDoc2 등 바깥 변수에 접근 불가이므로 JSON으로 전달
+          const _pd = document.createElement('div');
+          _pd.innerHTML = "$escaped";
+          let _blocks = Array.from(_pd.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li'));
+          if (_blocks.length === 0) {
+            const _raw = _pd.innerHTML.replace(/<br\\s*\\/?>/gi, '\\n');
+            const _tmpDiv = document.createElement('div'); _tmpDiv.innerHTML = _raw;
+            _blocks = (_tmpDiv.textContent||'').split('\\n').filter(s=>s.trim()).map(s=>{
+              const _e = document.createElement('p'); _e.textContent = s; return _e;
+            });
+          }
+          if (_blocks.length === 0) _blocks = [_pd];
+          const _s4 = ()=>Math.floor((1+Math.random())*0x10000).toString(16).substring(1);
+          const _uid = ()=>'SE-'+_s4()+_s4()+'-'+_s4()+'-4'+_s4().substr(1)+'-'+(Math.floor(Math.random()*4+8)).toString(16)+_s4().substr(1)+'-'+_s4()+_s4()+_s4();
+          const _paras = _blocks.filter(b=>(b.textContent||'').trim()).map(b=>({
+            id:_uid(), nodes:[{id:_uid(), value:(b.textContent||'').trim(), '@ctype':'textNode'}], '@ctype':'paragraph'
+          }));
+          if (_paras.length === 0) _paras.push({id:_uid(), nodes:[{id:_uid(), value:'', '@ctype':'textNode'}], '@ctype':'paragraph'});
 
-        // 방법 2: execCommand insertHTML
-        try {
-          const win = doc.defaultView || window;
-          const sel = win.getSelection();
-          sel.selectAllChildren(el);
-          if (doc.execCommand('insertHTML', false, "$escaped")) return 'execCommand_ok';
-        } catch(e) {}
+          iDoc2.__caifyParas = JSON.stringify(_paras);
+          iDoc2.__caifyResult2 = null;
+          const s2 = iDoc2.createElement('script');
+          // iframe 스크립트: document.__caifyParas 읽어서 SE3 setDocumentData 호출
+          // iDoc2 등 바깥 변수 일절 사용 금지 — document만 사용
+          s2.textContent = '(function(){'
+            + 'try{'
+            + 'var paras=JSON.parse(document.__caifyParas);'
+            + 'var _sm=window.SmartEditor;'
+            + 'var se3b=null;'
+            + 'if(_sm&&_sm._editors){try{var _ed=_sm._editors;se3b=Array.isArray(_ed)?_ed[0]:(Object.values(_ed)[0]||null);}catch(ee){}}'
+            + 'if(!se3b){document.__caifyResult2="se3b_null";return;}'
+            + 'var ds=se3b._documentService;'
+            + 'if(!ds||typeof ds.getDocumentData!=="function"||typeof ds.setDocumentData!=="function"){document.__caifyResult2="no_ds_methods";return;}'
+            + 'var docData=ds.getDocumentData();'
+            + 'var inner=docData&&(docData.document||docData);'
+            + 'var comps=inner&&(inner.componentList||inner.components||inner.body||null);'
+            + 'if(!Array.isArray(comps)||comps.length===0){document.__caifyResult2="no_comps_in_doc";return;}'
+            + 'var textComp=null;'
+            + 'for(var i=0;i<comps.length;i++){'
+            + '  var ct=(comps[i]["@ctype"]||comps[i].ctype||comps[i].type||"").toLowerCase();'
+            + '  if(ct==="documenttitle"||ct==="title"||ct==="document_title")continue;'
+            + '  if(!ct&&("title" in comps[i]||"subTitle" in comps[i]))continue;'
+            + '  textComp=comps[i];break;'
+            + '}'
+            + 'if(!textComp){document.__caifyResult2="no_textComp:n="+comps.length;return;}'
+            + 'textComp.value=paras;'
+            + 'ds.setDocumentData(docData);'
+            + 'document.__caifyResult2="ok_setDocData:"+paras.length;'
+            + '}catch(e){document.__caifyResult2="err:"+e.message;}'
+            + '})();';
+          (iDoc2.head || iDoc2.body || iDoc2.documentElement).appendChild(s2);
+          s2.remove();
+          return iDoc2.__caifyResult2 || 'null_result2';
+        }
 
-        // 방법 3: innerHTML 직접
+        // iDoc2 없을 경우 최후 수단
         el.innerHTML = "$escaped";
-        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
         return 'innerHTML_ok';
       })()
     ''';
@@ -231,12 +404,40 @@ class NaverPublisher {
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
-        const doc = $_docFinder;
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+
+        // 방법 A: _tagService API (SE3 내부)
+        const sm = inMain ? window.SmartEditor : (iframe?.contentWindow?.SmartEditor);
+        if (sm && sm._editors) {
+          const ed = Object.values(sm._editors)[0];
+          const ts = ed?._tagService;
+          if (ts) {
+            const tagMethods = ['addTag','addTags','setTags','insertTag'];
+            for (const m of tagMethods) {
+              if (typeof ts[m] === 'function') {
+                try {
+                  for (const tag of [$tagsJson]) { ts[m](tag); }
+                  return 'ok_tagService:' + m;
+                } catch(e) {}
+              }
+            }
+            const tsMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(ts)).filter(k=>k[0]!=='_').join(',');
+            return 'no_tag_method:[' + tsMethods + ']';
+          }
+        }
+
+        // 방법 B: DOM input 탐색 (iframe 안팎 모두)
+        const doc = iDoc || document;
         const tagInput =
-          (doc && doc.querySelector('input.se-tag-input')) ||
-          (doc && doc.querySelector('input[placeholder*="태그"]')) ||
-          (doc && doc.querySelector('[class*="tag"] input')) ||
-          (doc && doc.querySelector('.se-tag-field input')) ||
+          doc.querySelector('input.se-tag-input') ||
+          doc.querySelector('input[placeholder*="태그"]') ||
+          doc.querySelector('[class*="tag"] input') ||
+          doc.querySelector('.se-tag-field input') ||
           document.querySelector('input.se-tag-input') ||
           document.querySelector('input[placeholder*="태그"]') ||
           document.querySelector('[class*="tag"] input') ||
@@ -296,6 +497,7 @@ class NaverPublisher {
         } catch(e) {
           return 'err:' + e.message;
         }
+
       })()
     ''';
   }
@@ -355,27 +557,34 @@ class NaverPublisher {
   // ── 임시저장 버튼 ─────────────────────────────────────────────
   static String jsClickTempSave() => r'''
     (function() {
-      const doc = (function() {
-        if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
-        const frames = [document.querySelector("iframe[name='mainFrame']"),document.querySelector("iframe#mainFrame"),document.querySelector("iframe")];
-        for (const f of frames) { if (!f) continue; let d; try{d=f.contentDocument;}catch(e){continue;} if(d&&d.querySelector('.se-title-text,.se-section-documentTitle'))return d; }
-        return null;
-      })();
-      if (!doc) return 'no_doc';
-      const btn =
-        doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
-        doc.querySelector('button[class*="temp_save"]') ||
-        doc.querySelector('button[class*="tempSave"]') ||
-        Array.from(doc.querySelectorAll('button')).find(b =>
-          (b.innerText||'').trim() === '임시저장'
-        );
-      if (!btn) {
-        const all = Array.from(doc.querySelectorAll('button'))
-          .map(b=>(b.innerText||'').trim().substring(0,15)).filter(t=>t).join(',');
-        return 'no_save_btn|' + all;
+      // .se-title-text 없어도 버튼 탐색 — 상위/iframe 모두 시도
+      const searchDocs = [document];
+      const frames = [
+        document.querySelector("iframe[name='mainFrame']"),
+        document.querySelector("iframe#mainFrame"),
+        document.querySelector("iframe"),
+      ];
+      for (const f of frames) {
+        if (!f) continue;
+        let d; try { d = f.contentDocument; } catch(e) { continue; }
+        if (d) searchDocs.push(d);
       }
-      btn.click();
-      return 'ok';
+      for (const doc of searchDocs) {
+        const btn =
+          doc.querySelector('button[data-click-area="tpb.tempsave"]') ||
+          doc.querySelector('button[class*="temp_save"]') ||
+          doc.querySelector('button[class*="tempSave"]') ||
+          Array.from(doc.querySelectorAll('button')).find(b =>
+            (b.innerText||'').trim() === '임시저장'
+          ) ||
+          Array.from(doc.querySelectorAll('button')).find(b =>
+            (b.innerText||'').trim() === '저장'
+          );
+        if (btn) { btn.click(); return 'ok'; }
+      }
+      const allBtns = Array.from(document.querySelectorAll('button'))
+        .map(b=>(b.innerText||'').trim().substring(0,15)).filter(t=>t).join(',');
+      return 'no_save_btn|' + allBtns;
     })()
   ''';
 

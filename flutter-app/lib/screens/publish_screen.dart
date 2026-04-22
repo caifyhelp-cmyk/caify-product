@@ -414,6 +414,11 @@ class _PublishScreenState extends State<PublishScreen> {
   Future<void> _doInjectAndTempSave() async {
     if (!mounted) return;
 
+    // SE3 iframe 내부 구조 진단 (API 탐색용)
+    final se3Diag = _jsStr(await _ctrl!.evaluateJavascript(
+        source: NaverPublisher.jsDebugSE3()));
+    AppLogger.log('publish','[se3_diag] $se3Diag');
+
     // 제목 주입 (실패해도 계속 진행)
     _setStatus(PublishState.injecting, '제목 입력 중...');
     final titleResult = _jsStr(await _ctrl!.evaluateJavascript(
