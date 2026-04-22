@@ -557,11 +557,25 @@ class NaverPublisher {
       };
       const doc = findDoc();
       if (!doc) return 'no_doc';
-      const el =
+      // 본문 CE 탐색 — setDocumentData 후 SE3가 DOM 재렌더링하므로 다양한 셀렉터 시도
+      let el =
         doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
         doc.querySelector('.se-section-text [contenteditable="true"]') ||
         doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
         doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+      if (!el) {
+        // 폴백: 단일 CE div 안에서 title 영역 제외한 본문 단락 찾기
+        const ce = doc.querySelector('[contenteditable="true"]');
+        if (ce) {
+          const bodyP =
+            Array.from(ce.querySelectorAll('p')).find(p =>
+              !p.closest('.se-section-documentTitle') &&
+              !p.closest('.se-title-text') &&
+              !p.closest('.se-module-documentTitle')
+            );
+          el = bodyP || ce;
+        }
+      }
       if (!el) return 'no_body_el';
       el.focus();
       const win = doc.defaultView || window;
