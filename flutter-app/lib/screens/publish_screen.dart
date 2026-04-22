@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
 import '../services/naver_publisher.dart';
@@ -438,25 +437,7 @@ class _PublishScreenState extends State<PublishScreen> {
         source: NaverPublisher.jsInjectHtmlFallback(widget.post.html)));
     AppLogger.log('publish','[inject_body_fallback] $fallbackResult');
 
-    // 이미지 라이브러리 업로드 (HTML에서 img URL 추출 → blob paste)
-    final imgUrls = _extractImageUrls(widget.post.html);
-    if (imgUrls.isNotEmpty) {
-      _setStatus(PublishState.injecting, '이미지 업로드 중...');
-      for (final url in imgUrls) {
-        final result = await _injectImageFromUrl(url);
-        AppLogger.log('publish','[inject_img] $url → $result');
-        await Future.delayed(const Duration(seconds: 2)); // SE3 업로드 대기
-      }
-    }
-
-    // 태그 주입 (실패해도 계속 진행)
-    if (widget.post.tags.isNotEmpty) {
-      _setStatus(PublishState.injecting, '태그 입력 중...');
-      final tagResult = _jsStr(await _ctrl!.evaluateJavascript(
-          source: NaverPublisher.jsAddTags(widget.post.tags)));
-      AppLogger.log('publish','[inject_tags] $tagResult');
-      await Future.delayed(const Duration(milliseconds: 800));
-    }
+    // 태그는 발행 다이얼로그에서 주입 (_doPublish 참고)
 
     // 임시저장 시도 (실패해도 계속 진행)
     _setStatus(PublishState.saving, '임시저장 중...');
@@ -481,13 +462,22 @@ class _PublishScreenState extends State<PublishScreen> {
 
   // ── 발행 버튼 클릭 ─────────────────────────────────────────
   Future<void> _doPublish() async {
-    // 배너 자동 숨김
     if (_showBanner) setState(() => _showBanner = false);
-
     if (_ctrl == null) return;
+
+    // 발행 버튼 클릭
     final result = _jsStr(await _ctrl!.evaluateJavascript(
         source: NaverPublisher.jsClickPublish()));
     AppLogger.log('publish','[publish_btn] $result');
+
+    // 다이얼로그 열릴 때까지 대기 후 태그 주입
+    if (widget.post.tags.isNotEmpty && _ctrl != null) {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      final tagResult = _jsStr(await _ctrl!.evaluateJavascript(
+          source: NaverPublisher.jsAddTagsInDialog(widget.post.tags)));
+      AppLogger.log('publish','[inject_tags_dialog] $tagResult');
+    }
+
     if (result != 'ok' && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -496,34 +486,6 @@ class _PublishScreenState extends State<PublishScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
-    }
-  }
-
-  // ── HTML에서 img src URL 추출 ──────────────────────────────
-  List<String> _extractImageUrls(String html) {
-    final pattern = RegExp(r'<img[^>]+src=["\']([^"\']+)["\']', caseSensitive: false);
-    return pattern.allMatches(html)
-        .map((m) => m.group(1)!)
-        .where((url) => url.startsWith('http'))
-        .toList();
-  }
-
-  // ── 이미지 URL → Flutter 다운로드 → base64 → SE3 blob paste ─
-  Future<String> _injectImageFromUrl(String url) async {
-    try {
-      final res = await http.get(Uri.parse(url))
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return 'http_${res.statusCode}';
-
-      final mimeType = res.headers['content-type'] ?? 'image/jpeg';
-      final base64Data = base64Encode(res.bodyBytes);
-
-      if (_ctrl == null || !mounted) return 'no_ctrl';
-      final jsResult = _jsStr(await _ctrl!.evaluateJavascript(
-          source: NaverPublisher.jsInjectImageBlob(base64Data, mimeType)));
-      return jsResult;
-    } catch (e) {
-      return 'err:$e';
     }
   }
 

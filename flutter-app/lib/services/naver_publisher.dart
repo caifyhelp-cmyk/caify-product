@@ -502,6 +502,41 @@ class NaverPublisher {
     ''';
   }
 
+  // ── 발행 다이얼로그 태그 주입 ────────────────────────────────
+  // 발행 버튼 클릭 후 다이얼로그 열리면 호출
+  static String jsAddTagsInDialog(List<String> tags) {
+    if (tags.isEmpty) return '"ok_empty"';
+    final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
+    return '''
+      (function() {
+        const tagInput =
+          document.querySelector('input[placeholder*="#태그"]') ||
+          document.querySelector('input[placeholder*="태그를 입력"]') ||
+          document.querySelector('input[placeholder*="태그"]') ||
+          document.querySelector('[class*="tag_input"] input') ||
+          document.querySelector('[class*="TagInput"] input');
+        if (!tagInput) {
+          const allInputs = Array.from(document.querySelectorAll('input'))
+            .map(i => (i.placeholder||'').substring(0,20)).filter(Boolean).join('|');
+          return 'no_tag_input|inputs=[' + allInputs + ']';
+        }
+        tagInput.focus();
+        let added = 0;
+        for (const tag of [$tagsJson]) {
+          const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(tagInput), 'value')?.set;
+          if (setter) setter.call(tagInput, tag);
+          else tagInput.value = tag;
+          tagInput.dispatchEvent(new Event('input', { bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', keyCode: 13, bubbles: true }));
+          tagInput.value = '';
+          added++;
+        }
+        return 'ok:' + added;
+      })()
+    ''';
+  }
+
   // ── 발행 버튼 클릭 ────────────────────────────────────────────
   static String jsClickPublish() => r'''
     (function() {
