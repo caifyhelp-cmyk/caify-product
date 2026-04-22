@@ -468,8 +468,9 @@ class _PublishScreenState extends State<PublishScreen> {
     }
   }
 
-  // ── 이미지 base64 → SE3 라이브러리 업로드 ──────────────────
-  // iframe script 주입 방식: execCommand 차단 우회, SE3 내부 API 또는 ClipboardEvent 사용
+  // ── 이미지 주입 → SE3 image 컴포넌트 삽입 ─────────────────
+  // 1순위: jsInjectImageComponent (URL 기반 setDocumentData — 업로드 불필요)
+  // 폴백: jsInjectImageViaScript (base64 ClipboardEvent — isTrusted 제한 있음)
   Future<void> _injectImagesViaClipboard() async {
     if (_ctrl == null) return;
     final imgRegex = RegExp(r'''<img[^>]+src=["']([^"']+)["']''', caseSensitive: false);
@@ -484,29 +485,37 @@ class _PublishScreenState extends State<PublishScreen> {
     }
     for (int i = 0; i < urls.length; i++) {
       final url = urls[i];
-      AppLogger.log('publish', '[img_inject] 다운로드 $url');
+      AppLogger.log('publish', '[img_inject] URL 컴포넌트 삽입 시도: $url');
+
+      // 1순위: SE3 image 컴포넌트로 setDocumentData 삽입
+      if (_ctrl == null || !mounted) break;
+      final compResult = _jsStr(await _ctrl!.evaluateJavascript(
+          source: NaverPublisher.jsInjectImageComponent(url)));
+      AppLogger.log('publish', '[img_inject] comp[$i]=$compResult');
+
+      if (compResult.startsWith('ok_img_comp')) {
+        await Future.delayed(const Duration(seconds: 2));
+        continue;
+      }
+
+      // 폴백: base64 → ClipboardEvent (isTrusted 제한 있음, 진단용)
+      AppLogger.log('publish', '[img_inject] 컴포넌트 실패, base64 폴백 시도');
       try {
         final resp = await http.get(Uri.parse(url))
             .timeout(const Duration(seconds: 15));
-        if (resp.statusCode != 200) {
-          AppLogger.log('publish', '[img_inject] 실패: ${resp.statusCode}');
-          continue;
+        if (resp.statusCode == 200) {
+          final contentType = resp.headers['content-type'] ?? 'image/jpeg';
+          final mimeType = contentType.split(';').first.trim();
+          final base64Data = base64Encode(resp.bodyBytes);
+          if (_ctrl == null || !mounted) break;
+          final fbResult = _jsStr(await _ctrl!.evaluateJavascript(
+              source: NaverPublisher.jsInjectImageViaScript(base64Data, mimeType)));
+          AppLogger.log('publish', '[img_inject] fallback[$i]=$fbResult');
         }
-        final contentType = resp.headers['content-type'] ?? 'image/jpeg';
-        final mimeType = contentType.split(';').first.trim();
-        final base64Data = base64Encode(resp.bodyBytes);
-        AppLogger.log('publish', '[img_inject] mime=$mimeType bytes=${resp.bodyBytes.length}');
-
-        if (_ctrl == null || !mounted) break;
-        final injectResult = _jsStr(await _ctrl!.evaluateJavascript(
-            source: NaverPublisher.jsInjectImageViaScript(base64Data, mimeType)));
-        AppLogger.log('publish', '[img_inject] result[$i]=$injectResult');
-
-        // Naver 업로드 대기
-        await Future.delayed(const Duration(seconds: 4));
       } catch (e) {
-        AppLogger.log('publish', '[img_inject] 오류: $e');
+        AppLogger.log('publish', '[img_inject] 폴백 오류: $e');
       }
+      await Future.delayed(const Duration(seconds: 2));
     }
   }
 

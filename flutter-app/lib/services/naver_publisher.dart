@@ -464,8 +464,80 @@ class NaverPublisher {
     ''';
   }
 
+  // ── 이미지 URL → SE3 image 컴포넌트로 setDocumentData 삽입 ─────
+  // 1순위: setDocumentData에 image 컴포넌트 추가 (업로드 없이 URL 직접 삽입)
+  // 2순위: _papyrus 공개 메서드 목록 로깅 (업로드 API 탐색용)
+  static String jsInjectImageComponent(String imageUrl) {
+    final escaped = _escapeJs(imageUrl);
+    return '''
+      (function() {
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+        if (!iDoc) return 'no_iframe_doc';
+
+        iDoc.__caifyImgUrl = '$escaped';
+        iDoc.__caifyImgCompResult = null;
+
+        const s = iDoc.createElement('script');
+        s.textContent = '(function(){'
+          + 'try{'
+          + 'var imgUrl=document.__caifyImgUrl;'
+          + 'var _sm=window.SmartEditor;'
+          + 'var se3=null;'
+          + 'if(_sm&&_sm._editors){try{var _ed=_sm._editors;se3=Array.isArray(_ed)?_ed[0]:(Object.values(_ed)[0]||null);}catch(ee){}}'
+          + 'if(!se3){document.__caifyImgCompResult="se3_null";return;}'
+          // _papyrus 메서드 목록 (디버깅용 — 업로드 API 찾기)
+          + 'var pap=se3._papyrus;'
+          + 'var papPub=pap?Object.getOwnPropertyNames(Object.getPrototypeOf(pap)).filter(function(k){return k[0]!=="_";}).slice(0,30).join(","):"null";'
+          + 'var papPriv=pap?Object.getOwnPropertyNames(Object.getPrototypeOf(pap)).filter(function(k){return k[0]==="_";}).slice(0,20).join(","):"null";'
+          // _documentService로 setDocumentData 시도
+          + 'var ds=se3._documentService;'
+          + 'if(!ds||typeof ds.getDocumentData!=="function"||typeof ds.setDocumentData!=="function"){'
+          + '  document.__caifyImgCompResult="no_ds|pap_pub=["+papPub+"]";return;'
+          + '}'
+          + 'var docData=ds.getDocumentData();'
+          + 'var inner=docData&&(docData.document||docData);'
+          + 'var comps=inner&&(inner.componentList||inner.components||inner.body||null);'
+          + 'if(!Array.isArray(comps)){'
+          + '  document.__caifyImgCompResult="no_comps|pap_pub=["+papPub+"]";return;'
+          + '}'
+          // SE3 UUID 생성
+          + 'var s4=function(){return Math.floor((1+Math.random())*0x10000).toString(16).substring(1);};'
+          + 'var uid=function(){return "SE-"+s4()+s4()+"-"+s4()+"-4"+s4().substr(1)+"-"+(Math.floor(Math.random()*4+8)).toString(16)+s4().substr(1)+"-"+s4()+s4()+s4();};'
+          // SE3 image 컴포넌트 형식 (다양한 형식 시도)
+          + 'var imgComp={'
+          + '  "@ctype":"image",'
+          + '  "id":uid(),'
+          + '  "layout":"default",'
+          + '  "images":[{'
+          + '    "@ctype":"image",'
+          + '    "id":uid(),'
+          + '    "src":imgUrl,'
+          + '    "width":800,'
+          + '    "height":600,'
+          + '    "orgWidth":800,'
+          + '    "orgHeight":600'
+          + '  }],'
+          + '  "caption":{"text":"","@ctype":"caption"}'
+          + '};'
+          + 'comps.push(imgComp);'
+          + 'ds.setDocumentData(docData);'
+          + 'document.__caifyImgCompResult="ok_img_comp|pap_pub=["+papPub+"]|pap_priv=["+papPriv+"]";'
+          + '}catch(e){document.__caifyImgCompResult="err:"+e.message;}'
+          + '})();';
+        (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
+        s.remove();
+        return iDoc.__caifyImgCompResult || 'null_result';
+      })()
+    ''';
+  }
+
   // ── 이미지 base64 → SE3 라이브러리 업로드 (iframe script 주입) ─
-  // base64 이미지를 iframe script로 전달 → SE3 내부 API 또는 ClipboardEvent로 업로드
+  // execCommand 차단 우회용 — ClipboardEvent를 iframe 컨텍스트에서 발송
   static String jsInjectImageViaScript(String base64Data, String mimeType) {
     final ext = mimeType.contains('/') ? mimeType.split('/').last : 'jpg';
     return '''
@@ -494,29 +566,6 @@ class NaverPublisher {
           + 'for(var i=0;i<byteChars.length;i++)bytes[i]=byteChars.charCodeAt(i);'
           + 'var blob=new Blob([bytes],{type:mime});'
           + 'var file=new File([blob],"image."+ext,{type:mime});'
-          // SE3 editor 찾기
-          + 'var _sm=window.SmartEditor;'
-          + 'var se3=null;'
-          + 'if(_sm&&_sm._editors){try{var _ed=_sm._editors;se3=Array.isArray(_ed)?_ed[0]:(Object.values(_ed)[0]||null);}catch(ee){}}'
-          // _papyrus 이미지 업로드 API 시도
-          + 'if(se3&&se3._papyrus){'
-          + '  var pap=se3._papyrus;'
-          + '  var papMethods=["uploadImage","insertImage","addImage","pasteImage","handleImageFile","handleFile"];'
-          + '  for(var pi=0;pi<papMethods.length;pi++){'
-          + '    try{if(typeof pap[papMethods[pi]]==="function"){pap[papMethods[pi]](file);document.__caifyImgResult="ok_pap:"+papMethods[pi];return;}}catch(pme){}'
-          + '  }'
-          + '}'
-          // _imageService 시도
-          + 'if(se3&&se3._imageService){'
-          + '  var imgSvc=se3._imageService;'
-          + '  var imgMethods=["upload","insertImage","addImage","handleFile","uploadFile","insertFile"];'
-          + '  for(var ii=0;ii<imgMethods.length;ii++){'
-          + '    try{if(typeof imgSvc[imgMethods[ii]]==="function"){imgSvc[imgMethods[ii]](file);document.__caifyImgResult="ok_imgSvc:"+imgMethods[ii];return;}}catch(ime){}'
-          + '  }'
-          + '}'
-          // se3 서비스 목록 로깅 (디버깅용)
-          + 'var se3Keys=se3?Object.keys(se3).filter(function(k){return k[0]==="_";}).join(","):"null";'
-          // 폴백: 본문 CE에 ClipboardEvent paste 발송
           + 'var el='
           + '  document.querySelector(".se-component.se-text [contenteditable=true]")||'
           + '  document.querySelector(".se-section-text [contenteditable=true]")||'
@@ -524,24 +573,15 @@ class NaverPublisher {
           + '  document.querySelector("[data-placeholder*=\\u0027내용\\u0027][contenteditable]");'
           + 'if(!el){'
           + '  var ce=document.querySelector("[contenteditable=true]");'
-          + '  if(ce){'
-          + '    var bp=Array.from(ce.querySelectorAll("p")).find(function(p){'
-          + '      return !p.closest(".se-section-documentTitle")&&!p.closest(".se-title-text");'
-          + '    });'
-          + '    el=bp||ce;'
-          + '  }'
+          + '  if(ce){var bp=Array.from(ce.querySelectorAll("p")).find(function(p){return !p.closest(".se-section-documentTitle")&&!p.closest(".se-title-text");});el=bp||ce;}'
           + '}'
-          + 'if(!el){document.__caifyImgResult="no_body_el|se3=["+se3Keys+"]";return;}'
+          + 'if(!el){document.__caifyImgResult="no_body_el";return;}'
           + 'el.focus();'
-          + 'try{'
-          + '  var dt=new DataTransfer();'
-          + '  dt.items.add(file);'
-          + '  var ev=new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true});'
-          + '  var dispatched=el.dispatchEvent(ev);'
-          + '  document.__caifyImgResult="paste_dispatched:"+dispatched+"|se3=["+se3Keys+"]";'
-          + '}catch(pe){'
-          + '  document.__caifyImgResult="paste_err:"+pe.message+"|se3=["+se3Keys+"]";'
-          + '}'
+          + 'var dt=new DataTransfer();'
+          + 'dt.items.add(file);'
+          + 'var ev=new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true});'
+          + 'var dispatched=el.dispatchEvent(ev);'
+          + 'document.__caifyImgResult="paste_dispatched:"+dispatched;'
           + '}catch(e){document.__caifyImgResult="err:"+e.message;}'
           + '})();';
         (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
