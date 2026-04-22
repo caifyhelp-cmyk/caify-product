@@ -468,9 +468,9 @@ class _PublishScreenState extends State<PublishScreen> {
     }
   }
 
-  // ── 이미지 주입 → SE3 image 컴포넌트 삽입 ─────────────────
-  // 1순위: jsInjectImageComponent (URL 기반 setDocumentData — 업로드 불필요)
-  // 폴백: jsInjectImageViaScript (base64 ClipboardEvent — isTrusted 제한 있음)
+  // ── 이미지 주입 → 실제 Ctrl+V → Naver CDN 업로드 ──────────
+  // Android ClipboardManager에 이미지 세팅 → dispatchKeyEvent(Ctrl+V)
+  // → SE3 isTrusted paste 이벤트 → Naver 라이브러리 업로드
   Future<void> _injectImagesViaClipboard() async {
     if (_ctrl == null) return;
     final imgRegex = RegExp(r'''<img[^>]+src=["']([^"']+)["']''', caseSensitive: false);
@@ -483,39 +483,43 @@ class _PublishScreenState extends State<PublishScreen> {
       AppLogger.log('publish', '[img_inject] 이미지 없음');
       return;
     }
+    const channel = MethodChannel('caify/install');
+    final tmpDir = await getTemporaryDirectory();
+
     for (int i = 0; i < urls.length; i++) {
       final url = urls[i];
-      AppLogger.log('publish', '[img_inject] URL 컴포넌트 삽입 시도: $url');
-
-      // 1순위: SE3 image 컴포넌트로 setDocumentData 삽입
-      if (_ctrl == null || !mounted) break;
-      final compResult = _jsStr(await _ctrl!.evaluateJavascript(
-          source: NaverPublisher.jsInjectImageComponent(url)));
-      AppLogger.log('publish', '[img_inject] comp[$i]=$compResult');
-
-      if (compResult.startsWith('ok_img_comp')) {
-        await Future.delayed(const Duration(seconds: 2));
-        continue;
-      }
-
-      // 폴백: base64 → ClipboardEvent (isTrusted 제한 있음, 진단용)
-      AppLogger.log('publish', '[img_inject] 컴포넌트 실패, base64 폴백 시도');
+      AppLogger.log('publish', '[img_inject] 다운로드: $url');
       try {
         final resp = await http.get(Uri.parse(url))
             .timeout(const Duration(seconds: 15));
-        if (resp.statusCode == 200) {
-          final contentType = resp.headers['content-type'] ?? 'image/jpeg';
-          final mimeType = contentType.split(';').first.trim();
-          final base64Data = base64Encode(resp.bodyBytes);
-          if (_ctrl == null || !mounted) break;
-          final fbResult = _jsStr(await _ctrl!.evaluateJavascript(
-              source: NaverPublisher.jsInjectImageViaScript(base64Data, mimeType)));
-          AppLogger.log('publish', '[img_inject] fallback[$i]=$fbResult');
+        if (resp.statusCode != 200) {
+          AppLogger.log('publish', '[img_inject] 다운로드 실패: ${resp.statusCode}');
+          continue;
         }
+        final ext = url.toLowerCase().contains('.png') ? 'png' : 'jpg';
+        final tmpFile = File('${tmpDir.path}/caify_img_$i.$ext');
+        await tmpFile.writeAsBytes(resp.bodyBytes);
+
+        // 1) Android 클립보드에 실제 이미지 세팅
+        final clipResult = await channel.invokeMethod<String>(
+            'setClipboardImage', {'path': tmpFile.path});
+        AppLogger.log('publish', '[img_inject] clipboard[$i]=$clipResult');
+
+        // 2) SE3 본문 커서 끝으로 이동
+        if (_ctrl == null || !mounted) break;
+        await _ctrl!.evaluateJavascript(
+            source: NaverPublisher.jsFocusBodyEndAndPaste());
+
+        // 3) 실제 Ctrl+V KeyEvent → isTrusted paste 이벤트 발생
+        await Future.delayed(const Duration(milliseconds: 200));
+        final pasteResult = await channel.invokeMethod<String>('dispatchPaste');
+        AppLogger.log('publish', '[img_inject] dispatchPaste[$i]=$pasteResult');
+
+        // 4) Naver 업로드 대기
+        await Future.delayed(const Duration(seconds: 4));
       } catch (e) {
-        AppLogger.log('publish', '[img_inject] 폴백 오류: $e');
+        AppLogger.log('publish', '[img_inject] 오류: $e');
       }
-      await Future.delayed(const Duration(seconds: 2));
     }
   }
 
