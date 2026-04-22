@@ -468,8 +468,9 @@ class _PublishScreenState extends State<PublishScreen> {
     }
   }
 
-  // ── 이미지 클립보드 붙여넣기 → Naver 라이브러리 업로드 ────
-  // PostingBridge 방식: 실제 Android 클립보드에 이미지 → execCommand('paste') → SE3 업로드
+  // ── 이미지 주입 → SE3 image 컴포넌트 삽입 ─────────────────
+  // 1순위: jsInjectImageComponent (URL 기반 setDocumentData — 업로드 불필요)
+  // 폴백: jsInjectImageViaScript (base64 ClipboardEvent — isTrusted 제한 있음)
   Future<void> _injectImagesViaClipboard() async {
     if (_ctrl == null) return;
     final imgRegex = RegExp(r'''<img[^>]+src=["']([^"']+)["']''', caseSensitive: false);
@@ -479,41 +480,42 @@ class _PublishScreenState extends State<PublishScreen> {
         .where((u) => u.startsWith('http'))
         .toList();
     if (urls.isEmpty) {
-      AppLogger.log('publish', '[img_clip] 이미지 없음');
+      AppLogger.log('publish', '[img_inject] 이미지 없음');
       return;
     }
-    const channel = MethodChannel('caify/install');
-    final tmpDir = await getTemporaryDirectory();
     for (int i = 0; i < urls.length; i++) {
       final url = urls[i];
-      AppLogger.log('publish', '[img_clip] 다운로드 $url');
+      AppLogger.log('publish', '[img_inject] URL 컴포넌트 삽입 시도: $url');
+
+      // 1순위: SE3 image 컴포넌트로 setDocumentData 삽입
+      if (_ctrl == null || !mounted) break;
+      final compResult = _jsStr(await _ctrl!.evaluateJavascript(
+          source: NaverPublisher.jsInjectImageComponent(url)));
+      AppLogger.log('publish', '[img_inject] comp[$i]=$compResult');
+
+      if (compResult.startsWith('ok_img_comp')) {
+        await Future.delayed(const Duration(seconds: 2));
+        continue;
+      }
+
+      // 폴백: base64 → ClipboardEvent (isTrusted 제한 있음, 진단용)
+      AppLogger.log('publish', '[img_inject] 컴포넌트 실패, base64 폴백 시도');
       try {
         final resp = await http.get(Uri.parse(url))
             .timeout(const Duration(seconds: 15));
-        if (resp.statusCode != 200) {
-          AppLogger.log('publish', '[img_clip] 실패: ${resp.statusCode}');
-          continue;
+        if (resp.statusCode == 200) {
+          final contentType = resp.headers['content-type'] ?? 'image/jpeg';
+          final mimeType = contentType.split(';').first.trim();
+          final base64Data = base64Encode(resp.bodyBytes);
+          if (_ctrl == null || !mounted) break;
+          final fbResult = _jsStr(await _ctrl!.evaluateJavascript(
+              source: NaverPublisher.jsInjectImageViaScript(base64Data, mimeType)));
+          AppLogger.log('publish', '[img_inject] fallback[$i]=$fbResult');
         }
-        final ext = url.toLowerCase().contains('.png') ? 'png' : 'jpg';
-        final tmpFile = File('${tmpDir.path}/caify_img_$i.$ext');
-        await tmpFile.writeAsBytes(resp.bodyBytes);
-
-        // 1) Android 클립보드에 이미지 세팅
-        final clipResult = await channel.invokeMethod<String>(
-            'setClipboardImage', {'path': tmpFile.path});
-        AppLogger.log('publish', '[img_clip] clipboard=$clipResult');
-
-        // 2) SE3 본문 커서 끝으로 이동 + execCommand('paste')
-        if (_ctrl == null || !mounted) break;
-        final pasteResult = _jsStr(await _ctrl!.evaluateJavascript(
-            source: NaverPublisher.jsFocusBodyEndAndPaste()));
-        AppLogger.log('publish', '[img_clip] paste[$i]=$pasteResult');
-
-        // 3) Naver 업로드 대기
-        await Future.delayed(const Duration(seconds: 4));
       } catch (e) {
-        AppLogger.log('publish', '[img_clip] 오류: $e');
+        AppLogger.log('publish', '[img_inject] 폴백 오류: $e');
       }
+      await Future.delayed(const Duration(seconds: 2));
     }
   }
 
@@ -529,7 +531,23 @@ class _PublishScreenState extends State<PublishScreen> {
 
     // 다이얼로그 열릴 때까지 대기 후 태그 주입
     if (widget.post.tags.isNotEmpty && _ctrl != null) {
-      await Future.delayed(const Duration(milliseconds: 1500));
+      await Future.delayed(const Duration(milliseconds: 2500));
+      // 진단: 다이얼로그 열린 후 iframe/input 구조 파악
+      final diagResult = _jsStr(await _ctrl!.evaluateJavascript(source: r'''
+        (function() {
+          const docs = [{src:'top', doc: document}];
+          const frames = Array.from(document.querySelectorAll('iframe'));
+          frames.forEach(f => {
+            try { if (f.contentDocument) docs.push({src: f.name||f.id||f.src||'?', doc: f.contentDocument}); } catch(e) {}
+          });
+          return docs.map(({src, doc}) => {
+            const inputs = Array.from(doc.querySelectorAll('input')).map(i=>(i.placeholder||i.name||i.type||'?').substring(0,15)).join(',');
+            const url = doc.location ? doc.location.href.substring(0,60) : '?';
+            return src + '[url=' + url + ',inputs=' + inputs + ']';
+          }).join('|');
+        })()
+      '''));
+      AppLogger.log('publish','[dialog_diag] $diagResult');
       final tagResult = _jsStr(await _ctrl!.evaluateJavascript(
           source: NaverPublisher.jsAddTagsInDialog(widget.post.tags)));
       AppLogger.log('publish','[inject_tags_dialog] $tagResult');

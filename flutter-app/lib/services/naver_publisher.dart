@@ -464,40 +464,129 @@ class NaverPublisher {
     ''';
   }
 
-  // ── 이미지 blob → SE3 라이브러리 업로드 ──────────────────────
-  // base64 이미지를 blob으로 변환 후 paste → SE3가 자체 업로드 처리
-  static String jsInjectImageBlob(String base64Data, String mimeType) {
+  // ── 이미지 URL → SE3 image 컴포넌트로 setDocumentData 삽입 ─────
+  // 1순위: setDocumentData에 image 컴포넌트 추가 (업로드 없이 URL 직접 삽입)
+  // 2순위: _papyrus 공개 메서드 목록 로깅 (업로드 API 탐색용)
+  static String jsInjectImageComponent(String imageUrl) {
+    final escaped = _escapeJs(imageUrl);
     return '''
       (function() {
-        const doc = $_docFinder;
-        if (!doc) return 'no_doc';
-        const el =
-          doc.querySelector('.se-component.se-text .__se-node') ||
-          doc.querySelector('.se-section-text .__se-node') ||
-          doc.querySelector('.se-component.se-text [contenteditable]') ||
-          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
-          doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
-          doc.querySelector('[data-placeholder*="내용"][contenteditable]');
-        if (!el) return 'no_body_el';
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+        if (!iDoc) return 'no_iframe_doc';
 
-        try {
-          const byteChars = atob('$base64Data');
-          const bytes = new Uint8Array(byteChars.length);
-          for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-          const blob = new Blob([bytes], { type: '$mimeType' });
-          const file = new File([blob], 'image.${mimeType.split('/').last}', { type: '$mimeType' });
+        iDoc.__caifyImgUrl = '$escaped';
+        iDoc.__caifyImgCompResult = null;
 
-          el.focus();
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          el.dispatchEvent(new ClipboardEvent('paste', {
-            clipboardData: dt, bubbles: true, cancelable: true
-          }));
-          return 'ok';
-        } catch(e) {
-          return 'err:' + e.message;
-        }
+        const s = iDoc.createElement('script');
+        s.textContent = '(function(){'
+          + 'try{'
+          + 'var imgUrl=document.__caifyImgUrl;'
+          + 'var _sm=window.SmartEditor;'
+          + 'var se3=null;'
+          + 'if(_sm&&_sm._editors){try{var _ed=_sm._editors;se3=Array.isArray(_ed)?_ed[0]:(Object.values(_ed)[0]||null);}catch(ee){}}'
+          + 'if(!se3){document.__caifyImgCompResult="se3_null";return;}'
+          // _papyrus 메서드 목록 (디버깅용 — 업로드 API 찾기)
+          + 'var pap=se3._papyrus;'
+          + 'var papPub=pap?Object.getOwnPropertyNames(Object.getPrototypeOf(pap)).filter(function(k){return k[0]!=="_";}).slice(0,30).join(","):"null";'
+          + 'var papPriv=pap?Object.getOwnPropertyNames(Object.getPrototypeOf(pap)).filter(function(k){return k[0]==="_";}).slice(0,20).join(","):"null";'
+          // _documentService로 setDocumentData 시도
+          + 'var ds=se3._documentService;'
+          + 'if(!ds||typeof ds.getDocumentData!=="function"||typeof ds.setDocumentData!=="function"){'
+          + '  document.__caifyImgCompResult="no_ds|pap_pub=["+papPub+"]";return;'
+          + '}'
+          + 'var docData=ds.getDocumentData();'
+          + 'var inner=docData&&(docData.document||docData);'
+          + 'var comps=inner&&(inner.componentList||inner.components||inner.body||null);'
+          + 'if(!Array.isArray(comps)){'
+          + '  document.__caifyImgCompResult="no_comps|pap_pub=["+papPub+"]";return;'
+          + '}'
+          // SE3 UUID 생성
+          + 'var s4=function(){return Math.floor((1+Math.random())*0x10000).toString(16).substring(1);};'
+          + 'var uid=function(){return "SE-"+s4()+s4()+"-"+s4()+"-4"+s4().substr(1)+"-"+(Math.floor(Math.random()*4+8)).toString(16)+s4().substr(1)+"-"+s4()+s4()+s4();};'
+          // SE3 image 컴포넌트 형식 (다양한 형식 시도)
+          + 'var imgComp={'
+          + '  "@ctype":"image",'
+          + '  "id":uid(),'
+          + '  "layout":"default",'
+          + '  "images":[{'
+          + '    "@ctype":"image",'
+          + '    "id":uid(),'
+          + '    "src":imgUrl,'
+          + '    "width":800,'
+          + '    "height":600,'
+          + '    "orgWidth":800,'
+          + '    "orgHeight":600'
+          + '  }],'
+          + '  "caption":{"text":"","@ctype":"caption"}'
+          + '};'
+          + 'comps.push(imgComp);'
+          + 'ds.setDocumentData(docData);'
+          + 'document.__caifyImgCompResult="ok_img_comp|pap_pub=["+papPub+"]|pap_priv=["+papPriv+"]";'
+          + '}catch(e){document.__caifyImgCompResult="err:"+e.message;}'
+          + '})();';
+        (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
+        s.remove();
+        return iDoc.__caifyImgCompResult || 'null_result';
+      })()
+    ''';
+  }
 
+  // ── 이미지 base64 → SE3 라이브러리 업로드 (iframe script 주입) ─
+  // execCommand 차단 우회용 — ClipboardEvent를 iframe 컨텍스트에서 발송
+  static String jsInjectImageViaScript(String base64Data, String mimeType) {
+    final ext = mimeType.contains('/') ? mimeType.split('/').last : 'jpg';
+    return '''
+      (function() {
+        const iframe = document.querySelector("iframe[name='mainFrame']") ||
+                       document.querySelector("iframe#mainFrame") ||
+                       document.querySelector("iframe");
+        const inMain = !!document.querySelector('.se-title-text,.se-section-documentTitle');
+        const iDoc = inMain ? document
+                   : (iframe ? (function(){try{return iframe.contentDocument;}catch(e){return null;}}()) : null);
+        if (!iDoc) return 'no_iframe_doc';
+
+        iDoc.__caifyImgB64  = '$base64Data';
+        iDoc.__caifyImgMime = '$mimeType';
+        iDoc.__caifyImgExt  = '$ext';
+        iDoc.__caifyImgResult = null;
+
+        const s = iDoc.createElement('script');
+        s.textContent = '(function(){'
+          + 'try{'
+          + 'var b64=document.__caifyImgB64;'
+          + 'var mime=document.__caifyImgMime;'
+          + 'var ext=document.__caifyImgExt;'
+          + 'var byteChars=atob(b64);'
+          + 'var bytes=new Uint8Array(byteChars.length);'
+          + 'for(var i=0;i<byteChars.length;i++)bytes[i]=byteChars.charCodeAt(i);'
+          + 'var blob=new Blob([bytes],{type:mime});'
+          + 'var file=new File([blob],"image."+ext,{type:mime});'
+          + 'var el='
+          + '  document.querySelector(".se-component.se-text [contenteditable=true]")||'
+          + '  document.querySelector(".se-section-text [contenteditable=true]")||'
+          + '  document.querySelector("[data-placeholder*=\\u0027글감\\u0027][contenteditable]")||'
+          + '  document.querySelector("[data-placeholder*=\\u0027내용\\u0027][contenteditable]");'
+          + 'if(!el){'
+          + '  var ce=document.querySelector("[contenteditable=true]");'
+          + '  if(ce){var bp=Array.from(ce.querySelectorAll("p")).find(function(p){return !p.closest(".se-section-documentTitle")&&!p.closest(".se-title-text");});el=bp||ce;}'
+          + '}'
+          + 'if(!el){document.__caifyImgResult="no_body_el";return;}'
+          + 'el.focus();'
+          + 'var dt=new DataTransfer();'
+          + 'dt.items.add(file);'
+          + 'var ev=new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true});'
+          + 'var dispatched=el.dispatchEvent(ev);'
+          + 'document.__caifyImgResult="paste_dispatched:"+dispatched;'
+          + '}catch(e){document.__caifyImgResult="err:"+e.message;}'
+          + '})();';
+        (iDoc.head || iDoc.body || iDoc.documentElement).appendChild(s);
+        s.remove();
+        return iDoc.__caifyImgResult || 'null_result';
       })()
     ''';
   }
@@ -509,17 +598,42 @@ class NaverPublisher {
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
-        const tagInput =
-          document.querySelector('input[placeholder*="#태그"]') ||
-          document.querySelector('input[placeholder*="태그를 입력"]') ||
-          document.querySelector('input[placeholder*="태그"]') ||
-          document.querySelector('[class*="tag_input"] input') ||
-          document.querySelector('[class*="TagInput"] input');
+        // 발행 다이얼로그는 top-level 또는 iframe 안에 있을 수 있음 — 둘 다 탐색
+        const searchDocs = [document];
+        const frames = [
+          document.querySelector("iframe[name='mainFrame']"),
+          document.querySelector("iframe#mainFrame"),
+          document.querySelector("iframe"),
+        ];
+        for (const f of frames) {
+          if (!f) continue;
+          let d; try { d = f.contentDocument; } catch(e) { continue; }
+          if (d) searchDocs.push(d);
+        }
+
+        const findTagInput = (doc) =>
+          doc.querySelector('input[placeholder*="#태그"]') ||
+          doc.querySelector('input[placeholder*="태그를 입력"]') ||
+          doc.querySelector('input[placeholder*="태그"]') ||
+          doc.querySelector('[class*="tag_input"] input') ||
+          doc.querySelector('[class*="TagInput"] input') ||
+          doc.querySelector('[class*="tag"] input') ||
+          doc.querySelector('input[name*="tag"]');
+
+        let tagInput = null;
+        for (const doc of searchDocs) {
+          tagInput = findTagInput(doc);
+          if (tagInput) break;
+        }
+
         if (!tagInput) {
-          const allInputs = Array.from(document.querySelectorAll('input'))
-            .map(i => (i.placeholder||'').substring(0,20)).filter(Boolean).join('|');
+          const allInputs = searchDocs.flatMap(doc =>
+            Array.from(doc.querySelectorAll('input'))
+              .map(i => (i.placeholder||i.name||'').substring(0,20)).filter(Boolean)
+          ).join('|');
           return 'no_tag_input|inputs=[' + allInputs + ']';
         }
+
         tagInput.focus();
         let added = 0;
         for (const tag of [$tagsJson]) {
@@ -557,11 +671,25 @@ class NaverPublisher {
       };
       const doc = findDoc();
       if (!doc) return 'no_doc';
-      const el =
+      // 본문 CE 탐색 — setDocumentData 후 SE3가 DOM 재렌더링하므로 다양한 셀렉터 시도
+      let el =
         doc.querySelector('.se-component.se-text [contenteditable="true"]') ||
         doc.querySelector('.se-section-text [contenteditable="true"]') ||
         doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
         doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+      if (!el) {
+        // 폴백: 단일 CE div 안에서 title 영역 제외한 본문 단락 찾기
+        const ce = doc.querySelector('[contenteditable="true"]');
+        if (ce) {
+          const bodyP =
+            Array.from(ce.querySelectorAll('p')).find(p =>
+              !p.closest('.se-section-documentTitle') &&
+              !p.closest('.se-title-text') &&
+              !p.closest('.se-module-documentTitle')
+            );
+          el = bodyP || ce;
+        }
+      }
       if (!el) return 'no_body_el';
       el.focus();
       const win = doc.defaultView || window;
