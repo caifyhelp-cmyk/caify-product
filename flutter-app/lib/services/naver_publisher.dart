@@ -225,33 +225,77 @@ class NaverPublisher {
   }
 
   // ── 태그 입력 ─────────────────────────────────────────────────
+  // 태그 input은 SE3 iframe 밖(outer document)에 있으므로 양쪽 모두 탐색
   static String jsAddTags(List<String> tags) {
     if (tags.isEmpty) return '"ok_empty"';
     final tagsJson = tags.map((t) => '"${_escapeJs(t)}"').join(',');
     return '''
       (function() {
         const doc = $_docFinder;
-        if (!doc) return 'no_doc';
         const tagInput =
-          doc.querySelector('input.se-tag-input') ||
-          doc.querySelector('input[placeholder*="태그"]') ||
-          doc.querySelector('[class*="tag"] input') ||
-          doc.querySelector('.se-tag-field input') ||
-          doc.querySelector('input[type="text"][class*="tag"]');
+          (doc && doc.querySelector('input.se-tag-input')) ||
+          (doc && doc.querySelector('input[placeholder*="태그"]')) ||
+          (doc && doc.querySelector('[class*="tag"] input')) ||
+          (doc && doc.querySelector('.se-tag-field input')) ||
+          document.querySelector('input.se-tag-input') ||
+          document.querySelector('input[placeholder*="태그"]') ||
+          document.querySelector('[class*="tag"] input') ||
+          document.querySelector('.se-tag-field input') ||
+          document.querySelector('input[type="text"][class*="tag"]');
         if (!tagInput) return 'no_tag_input';
 
         tagInput.focus();
+        let added = 0;
         for (const tag of [$tagsJson]) {
-          // React 호환 value setter
           const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(tagInput), 'value')?.set;
           if (setter) setter.call(tagInput, tag);
           else tagInput.value = tag;
-          tagInput.dispatchEvent(new Event('input', { bubbles: true }));
+          tagInput.dispatchEvent(new Event('input',  { bubbles: true }));
+          // Enter 또는 콤마로 태그 확정 (에디터에 따라 다름)
           tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
           tagInput.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', keyCode: 13, bubbles: true }));
+          tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: ',', keyCode: 188, bubbles: true }));
           tagInput.value = '';
+          added++;
         }
-        return 'ok';
+        return 'ok:' + added;
+      })()
+    ''';
+  }
+
+  // ── 이미지 blob → SE3 라이브러리 업로드 ──────────────────────
+  // base64 이미지를 blob으로 변환 후 paste → SE3가 자체 업로드 처리
+  static String jsInjectImageBlob(String base64Data, String mimeType) {
+    return '''
+      (function() {
+        const doc = $_docFinder;
+        if (!doc) return 'no_doc';
+        const el =
+          doc.querySelector('.se-component.se-text .__se-node') ||
+          doc.querySelector('.se-section-text .__se-node') ||
+          doc.querySelector('.se-component.se-text [contenteditable]') ||
+          doc.querySelector('.se-component.se-text .se-text-paragraph') ||
+          doc.querySelector('[data-placeholder*="글감"][contenteditable]') ||
+          doc.querySelector('[data-placeholder*="내용"][contenteditable]');
+        if (!el) return 'no_body_el';
+
+        try {
+          const byteChars = atob('$base64Data');
+          const bytes = new Uint8Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+          const blob = new Blob([bytes], { type: '$mimeType' });
+          const file = new File([blob], 'image.${mimeType.split('/').last}', { type: '$mimeType' });
+
+          el.focus();
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          el.dispatchEvent(new ClipboardEvent('paste', {
+            clipboardData: dt, bubbles: true, cancelable: true
+          }));
+          return 'ok';
+        } catch(e) {
+          return 'err:' + e.message;
+        }
       })()
     ''';
   }
