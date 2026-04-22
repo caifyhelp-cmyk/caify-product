@@ -529,7 +529,23 @@ class _PublishScreenState extends State<PublishScreen> {
 
     // 다이얼로그 열릴 때까지 대기 후 태그 주입
     if (widget.post.tags.isNotEmpty && _ctrl != null) {
-      await Future.delayed(const Duration(milliseconds: 1500));
+      await Future.delayed(const Duration(milliseconds: 2500));
+      // 진단: 다이얼로그 열린 후 iframe/input 구조 파악
+      final diagResult = _jsStr(await _ctrl!.evaluateJavascript(source: r'''
+        (function() {
+          const docs = [{src:'top', doc: document}];
+          const frames = Array.from(document.querySelectorAll('iframe'));
+          frames.forEach(f => {
+            try { if (f.contentDocument) docs.push({src: f.name||f.id||f.src||'?', doc: f.contentDocument}); } catch(e) {}
+          });
+          return docs.map(({src, doc}) => {
+            const inputs = Array.from(doc.querySelectorAll('input')).map(i=>(i.placeholder||i.name||i.type||'?').substring(0,15)).join(',');
+            const url = doc.location ? doc.location.href.substring(0,60) : '?';
+            return src + '[url=' + url + ',inputs=' + inputs + ']';
+          }).join('|');
+        })()
+      '''));
+      AppLogger.log('publish','[dialog_diag] $diagResult');
       final tagResult = _jsStr(await _ctrl!.evaluateJavascript(
           source: NaverPublisher.jsAddTagsInDialog(widget.post.tags)));
       AppLogger.log('publish','[inject_tags_dialog] $tagResult');
