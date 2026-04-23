@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/locked_screen.dart';
 import 'services/api_service.dart';
 import 'services/update_service.dart';
 
@@ -44,16 +45,22 @@ class _SplashRouterState extends State<_SplashRouter> {
   }
 
   Future<void> _route() async {
-    // 업데이트 체크는 화면 전환 후 백그라운드에서 — 스플래시 블로킹 방지
     final loggedIn = await ApiService.isLoggedIn();
     if (!mounted) return;
-    if (loggedIn) {
-      Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (_) => const HomeScreen()));
-    } else {
+    if (!loggedIn) {
       Navigator.pushReplacement(
           context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+      return;
     }
+    final cfg = await ApiService.loadConfig();
+    final tier = (cfg['tier'] as int?) ?? 0;
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => tier >= 1 ? const HomeScreen() : const LockedScreen(),
+      ),
+    );
   }
 
   @override

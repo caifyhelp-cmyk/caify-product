@@ -8,6 +8,8 @@ class ApiService {
   static const _keyMemberId   = 'memberId';
   static const _keyToken      = 'apiToken';
   static const _keyMemberName = 'memberName';
+  static const _keyTier       = 'memberTier';       // 0=무료, 1=유료
+  static const _keyHasWf      = 'memberHasWorkflows';
 
   // 실서버 기본 주소 — 설정 미저장 시 fallback
   static const defaultApiBase = 'https://caify-mock-server.onrender.com';
@@ -18,27 +20,34 @@ class ApiService {
     required String memberId,
     String token = '',
     String memberName = '',
+    int tier = 0,
+    bool hasWorkflows = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyBase, apiBase.replaceAll(RegExp(r'/$'), ''));
     await prefs.setString(_keyMemberId, memberId);
     await prefs.setString(_keyToken, token);
     await prefs.setString(_keyMemberName, memberName);
+    await prefs.setInt(_keyTier, tier);
+    await prefs.setBool(_keyHasWf, hasWorkflows);
   }
 
-  static Future<Map<String, String>> loadConfig() async {
+  static Future<Map<String, dynamic>> loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     return {
-      'apiBase':    prefs.getString(_keyBase)       ?? '',
-      'memberId':   prefs.getString(_keyMemberId)   ?? '',
-      'apiToken':   prefs.getString(_keyToken)      ?? '',
-      'memberName': prefs.getString(_keyMemberName) ?? '',
+      'apiBase':      prefs.getString(_keyBase)       ?? '',
+      'memberId':     prefs.getString(_keyMemberId)   ?? '',
+      'apiToken':     prefs.getString(_keyToken)      ?? '',
+      'memberName':   prefs.getString(_keyMemberName) ?? '',
+      'tier':         prefs.getInt(_keyTier)          ?? 0,
+      'hasWorkflows': prefs.getBool(_keyHasWf)        ?? false,
     };
   }
 
   static Future<bool> isLoggedIn() async {
     final cfg = await loadConfig();
-    return cfg['apiToken']!.isNotEmpty && cfg['memberId']!.isNotEmpty;
+    return (cfg['apiToken'] as String).isNotEmpty &&
+           (cfg['memberId'] as String).isNotEmpty;
   }
 
   static Future<void> logout() async {
@@ -46,6 +55,8 @@ class ApiService {
     await prefs.remove(_keyToken);
     await prefs.remove(_keyMemberId);
     await prefs.remove(_keyMemberName);
+    await prefs.remove(_keyTier);
+    await prefs.remove(_keyHasWf);
   }
 
   // ── 로그인 ───────────────────────────────────────────────────
@@ -68,16 +79,48 @@ class ApiService {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode == 200 && data['ok'] == true) {
         await saveConfig(
-          apiBase:    base,
-          memberId:   data['member_pk'].toString(),
-          token:      data['api_token'] ?? '',
-          memberName: data['company_name'] ?? memberId,
+          apiBase:      base,
+          memberId:     data['member_pk'].toString(),
+          token:        data['api_token'] ?? '',
+          memberName:   data['company_name'] ?? memberId,
+          tier:         (data['tier'] as num?)?.toInt() ?? 0,
+          hasWorkflows: data['has_workflows'] as bool? ?? false,
         );
         return {'ok': true, ...data};
       }
       return {'ok': false, 'error': data['error'] ?? '로그인 실패'};
     } catch (e) {
       return {'ok': false, 'error': '서버 연결 실패: $e'};
+    }
+  }
+
+  // ── 내 정보 (tier + 워크플로우 현황) ─────────────────────────────
+  /// 서버에서 최신 플랜 정보를 가져와 로컬에도 반영
+  static Future<Map<String, dynamic>?> fetchMe() async {
+    final cfg = await loadConfig();
+    if ((cfg['apiBase'] as String).isEmpty) return null;
+
+    try {
+      final res = await http.get(
+        Uri.parse('${cfg['apiBase']}/member/me'),
+        headers: await authHeaders(),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['ok'] != true) return null;
+
+      await saveConfig(
+        apiBase:      cfg['apiBase'] as String,
+        memberId:     cfg['memberId'] as String,
+        token:        cfg['apiToken'] as String,
+        memberName:   cfg['memberName'] as String,
+        tier:         (data['tier'] as num?)?.toInt() ?? 0,
+        hasWorkflows: data['has_workflows'] as bool? ?? false,
+      );
+      return data;
+    } catch (_) {
+      return null;
     }
   }
 

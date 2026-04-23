@@ -15,6 +15,8 @@
  * POST /api/posts/:id/failed → 발행 실패 기록
  * GET /api/post_meta?id=X → 고객 프롬프트 메타데이터
  * POST /member/login → 로그인 (Bearer 토큰 발급)
+ * GET /member/me → 내 정보 + 플랜/워크플로우 현황
+ * POST /member/provision → (관리자) 유료 고객 워크플로우 복제·활성화
  * GET /admin/posts → 관리자: 전체 포스트 조회
  * POST /admin/posts/:id/approve → 관리자: 포스트 승인
  *
@@ -28,6 +30,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const n8nCfg = require('./n8n.config');
 
 const app = express();
 const PORT = process.env.PORT || 3030;
@@ -198,6 +201,8 @@ const members = [
     passwd: 'password123', // 실서버: password_hash()
     company_name: '테스트 치과',
     api_token: 'mock-token-testuser',
+    tier: 0,          // 0=무료, 1=유료
+    n8n_workflow_ids: null,
   },
   {
     id: 2,
@@ -205,6 +210,13 @@ const members = [
     passwd: 'password123',
     company_name: '강남 치과의원',
     api_token: 'mock-token-dental2',
+    tier: 1,
+    n8n_workflow_ids: {
+      case:  'wf-dental2-case',
+      info:  'wf-dental2-info',
+      promo: 'wf-dental2-promo',
+      plusA: 'wf-dental2-plus',
+    },
   },
   {
     id: 10, // 관리자 (실서버: id=10)
@@ -212,6 +224,8 @@ const members = [
     passwd: 'adminpass',
     company_name: 'Caify 관리자',
     api_token: 'mock-token-admin',
+    tier: 1,
+    n8n_workflow_ids: null,
   },
 ];
 
@@ -285,6 +299,21 @@ function isAdmin(member) {
   return member && member.id === 10;
 }
 
+// 유료 여부 (tier=1 또는 관리자)
+function isPaid(member) {
+  return member && (member.tier === 1 || isAdmin(member));
+}
+
+// 유료 전용 미들웨어 — 무료 유저는 403
+function requirePaid(req, res, next) {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  if (!isPaid(member)) {
+    return res.status(403).json({ ok: false, error: 'paid_required', message: '유료 플랜 전용 기능입니다.' });
+  }
+  next();
+}
+
 // ── 로깅 미들웨어 ─────────────────────────────────────────────────
 app.use((req, res, next) => {
   const token = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').substring(0, 20);
@@ -309,7 +338,113 @@ app.post('/member/login', (req, res) => {
     member_id: member.member_id,
     company_name: member.company_name,
     api_token: member.api_token,
+    tier: member.tier ?? 0,
+    has_workflows: !!(member.n8n_workflow_ids),
   });
+});
+
+// ════════════════════════════════════════════════════════════════
+// GET /member/me — 내 정보 + 플랜/워크플로우 현황
+// ════════════════════════════════════════════════════════════════
+
+app.get('/member/me', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  res.json({
+    ok: true,
+    member_pk: member.id,
+    member_id: member.member_id,
+    company_name: member.company_name,
+    tier: member.tier ?? 0,
+    has_workflows: !!(member.n8n_workflow_ids),
+    n8n_workflow_ids: member.n8n_workflow_ids || null,
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// POST /member/provision — (관리자) 유료 고객 n8n 워크플로우 복제·활성화
+// Body: { member_pk }
+// N8N_URL + N8N_API_KEY 환경변수 없으면 mock ID로 대체
+// ════════════════════════════════════════════════════════════════
+
+const WORKFLOW_TYPES = ['case', 'info', 'promo', 'plusA'];
+
+app.post('/member/provision', async (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member || !isAdmin(member)) {
+    return res.status(403).json({ ok: false, error: '관리자 권한이 필요합니다.' });
+  }
+
+  const target = members.find(m => m.id === parseInt(req.body.member_pk, 10));
+  if (!target) return res.status(404).json({ ok: false, error: '회원을 찾을 수 없습니다.' });
+
+  const N8N_URL     = n8nCfg.N8N_URL;
+  const N8N_API_KEY = n8nCfg.N8N_API_KEY;
+  const TEMPLATE_IDS = n8nCfg.TEMPLATE_IDS;
+
+  const workflow_ids = {};
+
+  if (N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+    for (const type of WORKFLOW_TYPES) {
+      try {
+        const templateId = TEMPLATE_IDS[type];
+        if (!templateId) { workflow_ids[type] = `no-template-${type}`; continue; }
+
+        const tRes = await fetch(`${N8N_URL}/api/v1/workflows/${templateId}`, {
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        });
+        const template = await tRes.json();
+
+        const cRes = await fetch(`${N8N_URL}/api/v1/workflows`, {
+          method: 'POST',
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `[${target.id}] ${target.company_name} - ${type}`,
+            nodes: template.nodes,
+            connections: template.connections,
+            settings: template.settings,
+          }),
+        });
+        const created = await cRes.json();
+        workflow_ids[type] = created.id;
+
+        await fetch(`${N8N_URL}/api/v1/workflows/${created.id}/activate`, {
+          method: 'POST',
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        });
+      } catch (e) {
+        console.error(`[provision] ${type} 실패:`, e.message);
+        workflow_ids[type] = `err-${type}`;
+      }
+    }
+  } else {
+    // N8N 환경변수 미설정 → mock ID
+    for (const type of WORKFLOW_TYPES) {
+      workflow_ids[type] = `mock-${target.id}-${type}-${Date.now()}`;
+    }
+    console.log('[provision] N8N 환경변수 없음 — mock ID 사용');
+  }
+
+  target.tier = 1;
+  target.n8n_workflow_ids = workflow_ids;
+
+  messages.push({
+    id: nextMsgId++,
+    member_pk: target.id,
+    type: 'workflow.provisioned',
+    is_system: true,
+    text: `🎉 유료 플랜으로 업그레이드됐습니다!\n\n${target.company_name}님의 맞춤 AI 워크플로우 ${WORKFLOW_TYPES.length}개가 활성화됐어요.\n\n이제 채팅으로 포스팅 톤·주제·길이 등을 자유롭게 조정할 수 있습니다. 무엇이든 말씀해 주세요!`,
+    post_id: null, post_title: null, post_html: null,
+    meta: { workflow_ids },
+    actions: [],
+    read: false,
+    created_at: new Date().toISOString(),
+  });
+  saveDb();
+
+  console.log(`[provision] member=${target.id} (${target.company_name}) — 워크플로우 ${WORKFLOW_TYPES.length}개 생성`);
+  res.json({ ok: true, workflow_ids, message: '프로비저닝 완료' });
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -318,9 +453,8 @@ app.post('/member/login', (req, res) => {
 // Electron tray: 60초마다 폴링 / Flutter: 목록 화면
 // ════════════════════════════════════════════════════════════════
 
-app.get('/api/posts', (req, res) => {
+app.get('/api/posts', requirePaid, (req, res) => {
   const member = getMemberByToken(req);
-  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
   const memberPk = parseInt(req.query.member_pk || '0', 10);
   const status = req.query.status || '';
@@ -355,7 +489,7 @@ app.get('/api/posts', (req, res) => {
 // Body: { title, html, naverHtml, customer_id, prompt_id, promptNodeId, subject?, intro? }
 // ════════════════════════════════════════════════════════════════
 
-app.post('/api/posts', (req, res) => {
+app.post('/api/posts', requirePaid, (req, res) => {
   const { title, html, naverHtml, customer_id, prompt_id, promptNodeId, subject, intro } = req.body;
 
   if (!title || !naverHtml || !customer_id || !promptNodeId) {
@@ -397,7 +531,7 @@ app.post('/api/posts', (req, res) => {
 // 실서버: posting_date = NOW() 설정 (output_publish_guard.php의 mark_posting 동일)
 // ════════════════════════════════════════════════════════════════
 
-app.post('/api/posts/:id/published', (req, res) => {
+app.post('/api/posts/:id/published', requirePaid, (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
@@ -422,7 +556,7 @@ app.post('/api/posts/:id/published', (req, res) => {
 // Electron tray / Flutter: 발행 실패 시 호출 (재시도 가능하도록 posting_date 유지)
 // ════════════════════════════════════════════════════════════════
 
-app.post('/api/posts/:id/failed', (req, res) => {
+app.post('/api/posts/:id/failed', requirePaid, (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
@@ -518,7 +652,7 @@ app.get('/api/post_meta', (req, res) => {
 // GET /api/posts/:id — 단일 포스트 조회 (brain-agent 검토 UI용)
 // ════════════════════════════════════════════════════════════════
 
-app.get('/api/posts/:id', (req, res) => {
+app.get('/api/posts/:id', requirePaid, (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
@@ -599,7 +733,7 @@ app.post('/api/posts/:id/reject', (req, res) => {
 // Flutter ChatScreen이 15초마다 폴링
 // ════════════════════════════════════════════════════════════════
 
-app.get('/api/messages', (req, res) => {
+app.get('/api/messages', requirePaid, (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
@@ -631,11 +765,38 @@ app.get('/api/messages', (req, res) => {
   })));
 });
 
+// ─── 워크플로우 커스터마이징 인텐트 감지 ─────────────────────────
+function detectWorkflowIntent(text) {
+  const t = text;
+  if (/톤|분위기|어조|친근|격식|전문적|말투|글체|문체/.test(t)) return 'tone';
+  if (/길이|짧게|길게|간결|상세|분량|글자/.test(t))             return 'length';
+  if (/주제|키워드|토픽|다뤄|써줘|다루/.test(t))                return 'topic';
+  if (/빈도|자주|횟수|얼마나|주에|한달/.test(t))               return 'frequency';
+  if (/금지|쓰지마|빼줘|사용하지|쓰면안/.test(t))              return 'forbidden';
+  if (/바꿔|변경|수정|조정|설정/.test(t))                       return 'general';
+  return null;
+}
+
+function workflowUpdateReply(intent, text) {
+  const intentLabel = {
+    tone:      '글 톤/분위기',
+    length:    '포스팅 길이',
+    topic:     '주제/키워드',
+    frequency: '발행 빈도',
+    forbidden: '금지어 설정',
+    general:   '워크플로우 설정',
+  }[intent] || '설정';
+
+  return `네, 반영했습니다!\n\n${intentLabel}를 요청하신 대로 업데이트했어요.\n"${text.substring(0, 40)}"\n\n다음 포스팅부터 적용됩니다. 더 조정할 부분이 있으면 언제든 말씀해 주세요!`;
+}
+
 // ════════════════════════════════════════════════════════════════
 // POST /api/messages — 고객이 직접 텍스트 입력 시
+// 유료 고객 + 워크플로우 인텐트 감지 → workflow.updated 응답
+// 무료 고객 + 인텐트 → 업그레이드 안내
 // ════════════════════════════════════════════════════════════════
 
-app.post('/api/messages', (req, res) => {
+app.post('/api/messages', requirePaid, (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
 
@@ -644,40 +805,51 @@ app.post('/api/messages', (req, res) => {
 
   const pk = parseInt(member_pk || '0', 10) || member.id;
 
-  const msg = {
+  messages.push({
     id: nextMsgId++,
     member_pk: pk,
     type: 'user_text',
     is_system: false,
     text: text.trim(),
-    post_id: null,
-    post_title: null,
-    post_html: null,
-    meta: null,
-    actions: [],
-    read: true,
+    post_id: null, post_title: null, post_html: null,
+    meta: null, actions: [], read: true,
     created_at: new Date().toISOString(),
-  };
+  });
 
-  messages.push(msg);
+  const intent = detectWorkflowIntent(text.trim());
+  let replyType, replyText, replyMeta = null;
 
-  // 자동 응답 (개발 편의)
-  const autoReply = {
+  if (intent && member.tier === 1) {
+    // 유료 고객 + 워크플로우 커스터마이징 요청
+    // 실서버: 여기서 n8n API 호출해 워크플로우 파라미터 업데이트
+    replyType = 'workflow.updated';
+    replyText = workflowUpdateReply(intent, text.trim());
+    replyMeta = { intent };
+  } else if (intent && member.tier === 0) {
+    // 무료 고객 + 커스터마이징 시도 → 업그레이드 안내
+    replyType = 'user_text';
+    replyText = '좋은 아이디어예요!\n\n워크플로우 커스터마이징은 유료 플랜 전용 기능입니다.\n유료 플랜으로 업그레이드하시면 포스팅 톤·주제·길이 등을 자유롭게 조정할 수 있어요.';
+  } else {
+    // 일반 문의
+    replyType = 'user_text';
+    replyText = `말씀 주신 내용 확인했습니다!\n"${text.trim().substring(0, 30)}" 요청을 반영해 다음 포스팅에 적용하겠습니다.`;
+  }
+
+  messages.push({
     id: nextMsgId++,
     member_pk: pk,
-    type: 'user_text',
+    type: replyType,
     is_system: true,
-    text: `말씀 주신 내용 확인했습니다!\n"${text.trim().substring(0, 30)}" 요청을 반영해 다음 포스팅에 적용하겠습니다.`,
+    text: replyText,
     post_id: null, post_title: null, post_html: null,
-    meta: null, actions: [], read: false,
+    meta: replyMeta, actions: [], read: false,
     created_at: new Date(Date.now() + 1000).toISOString(),
-  };
+  });
 
-  messages.push(autoReply);
   saveDb();
-  console.log(` [msg] member=${pk} text="${text.trim().substring(0, 40)}"`);
+  console.log(` [msg] member=${pk} intent=${intent || '-'} text="${text.trim().substring(0, 40)}"`);
 
-  res.status(201).json({ ok: true, id: msg.id });
+  res.status(201).json({ ok: true });
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -822,6 +994,8 @@ app.get('/', (req, res) => {
     members_count: members.length,
     endpoints: [
       'POST /member/login',
+      'GET /member/me',
+      'POST /member/provision',
       'GET /api/posts?status=ready&member_pk=X',
       'POST /api/posts',
       'POST /api/posts/:id/published',

@@ -15,11 +15,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _tokenCtrl    = TextEditingController();
   String _testResult  = '';
   bool _testing       = false;
+  int _tier           = 0;
+  bool _hasWorkflows  = false;
 
   @override
   void initState() {
     super.initState();
     _loadConfig();
+    _refreshPlan();
   }
 
   Future<void> _loadConfig() async {
@@ -27,6 +30,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiBaseCtrl.text  = cfg['apiBase']  ?? '';
     _memberIdCtrl.text = cfg['memberId'] ?? '';
     _tokenCtrl.text    = cfg['apiToken'] ?? '';
+    if (mounted) {
+      setState(() {
+        _tier         = (cfg['tier'] as int?)          ?? 0;
+        _hasWorkflows = (cfg['hasWorkflows'] as bool?) ?? false;
+      });
+    }
+  }
+
+  Future<void> _refreshPlan() async {
+    final data = await ApiService.fetchMe();
+    if (!mounted || data == null) return;
+    setState(() {
+      _tier         = (data['tier'] as num?)?.toInt()     ?? _tier;
+      _hasWorkflows = data['has_workflows'] as bool?       ?? _hasWorkflows;
+    });
   }
 
   @override
@@ -51,6 +69,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _sectionTitle('내 플랜'),
+            _planCard(),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 16),
             _sectionTitle('서버 연결'),
             _field('API 주소', _apiBaseCtrl, 'http://localhost:4000'),
             _field('회원 ID (member_pk)', _memberIdCtrl, '123'),
@@ -247,6 +270,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _planCard() {
+    final isPaid = _tier == 1;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isPaid
+            ? const Color(0xFFE8F5E9)
+            : const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isPaid
+              ? const Color(0xFF03C75A)
+              : Colors.grey.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isPaid ? Icons.workspace_premium : Icons.lock_outline,
+            color: isPaid ? const Color(0xFF03C75A) : Colors.grey,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isPaid ? '유료 플랜' : '무료 플랜',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: isPaid ? const Color(0xFF1B5E20) : Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isPaid
+                      ? _hasWorkflows
+                          ? 'AI 워크플로우 활성화됨 — 채팅으로 자유롭게 커스터마이징하세요'
+                          : 'AI 워크플로우 준비 중입니다'
+                      : '채팅 커스터마이징은 유료 플랜 전용입니다',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isPaid ? const Color(0xFF2E7D32) : Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

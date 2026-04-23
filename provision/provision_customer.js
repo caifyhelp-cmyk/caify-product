@@ -8,32 +8,15 @@
  *   node provision_customer.js --deprovision --member_pk=123   (워크플로우 삭제)
  */
 
-const fs = require('fs');
 const path = require('path');
 
-// .env 로드
-const env = {};
-fs.readFileSync(path.join(__dirname, '.env'), 'utf-8').split('\n').forEach(l => {
-  const [k, ...v] = l.split('=');
-  if (k && v.length) env[k.trim()] = v.join('=').trim();
-});
+// 공유 n8n 설정 (mock-server/n8n.config.js)
+const n8nCfg = require(path.join(__dirname, '../mock-server/n8n.config'));
 
-const N8N_BASE = env.N8N_URL?.replace(/\/$/, '');
-const API_KEY  = env.N8N_API_KEY;
-
-// ── 4개 템플릿 워크플로우 ID ──────────────────────────────────
-const TEMPLATES = {
-  case:  'vUlrwTSj0b3TcIKg',  // 서브워크플로우(사레)
-  info:  'DvvwnamBcqnqVgCz',  // 서브워크플로우(info)
-  promo: 'zUhFnjJvA7Fuz6UG',  // 서브워크플로우(promo)
-  plusA: 'gDW5xp9brX889Qmv',  // 서브워크플로우(plusA)
-};
-
-// ── Queue Worker ID (info/promo/plusA 라우팅 연결용) ───────────
-const QUEUE_WORKER_IDS = [
-  'bUXjHTh7xEecPuOr',  // CAIFY_QUEUE_WORKER1
-  '2bXgAbtA3ZuAOqWc',  // CAIFY_QUEUE_WORKER2
-];
+const N8N_BASE = n8nCfg.N8N_URL.replace(/\/$/, '');
+const API_KEY  = n8nCfg.N8N_API_KEY;
+const TEMPLATES       = n8nCfg.TEMPLATE_IDS;
+const QUEUE_WORKER_IDS = n8nCfg.QUEUE_WORKER_IDS;
 
 // ── n8n API 헬퍼 ─────────────────────────────────────────────
 async function api(method, endpoint, body = null) {
