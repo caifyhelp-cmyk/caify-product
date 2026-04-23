@@ -348,12 +348,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _postingModeCard() {
     final modeLabels = {
-      'intensive': '정보성 집중',
-      'mixed':     '균형 혼합',
+      'intensive': '정보성',
+      'mixed':     '믹스',
+      'case':      '사례형',
     };
     final modeDescs = {
-      'intensive': '정보성 3개+사례형 1개/일 (주 20개)',
-      'mixed':     '정보성 1개/일+사례형 3개/주 (주 8개)',
+      'intensive': 'info+promo+plusA 평일 매일 3개 (주 15개)',
+      'mixed':     '정보성 1개/일 순환 (주 5개) + 사례형 주 3회',
+      'case':      '사례형 주 5회 (자동 발행 없음)',
     };
     final curLabel  = modeLabels[_postingMode]  ?? _postingMode;
     final nextLabel = modeLabels[_postingModeNext] ?? '';
