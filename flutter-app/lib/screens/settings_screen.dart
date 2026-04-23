@@ -15,8 +15,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _tokenCtrl    = TextEditingController();
   String _testResult  = '';
   bool _testing       = false;
-  int _tier           = 0;
-  bool _hasWorkflows  = false;
+  int _tier              = 0;
+  bool _hasWorkflows     = false;
+  String _postingMode    = '';
+  String _postingModeNext = '';
+  String _modeSwitchWeek = '';
 
   @override
   void initState() {
@@ -39,11 +42,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _refreshPlan() async {
-    final data = await ApiService.fetchMe();
-    if (!mounted || data == null) return;
+    final me = await ApiService.fetchMe();
+    if (mounted && me != null) {
+      setState(() {
+        _tier         = (me['tier'] as num?)?.toInt()   ?? _tier;
+        _hasWorkflows = me['has_workflows'] as bool?     ?? _hasWorkflows;
+      });
+    }
+    if (_tier < 1) return;
+    final mode = await ApiService.fetchPostingMode();
+    if (!mounted || mode == null) return;
     setState(() {
-      _tier         = (data['tier'] as num?)?.toInt()     ?? _tier;
-      _hasWorkflows = data['has_workflows'] as bool?       ?? _hasWorkflows;
+      _postingMode     = mode['posting_mode']      as String? ?? '';
+      _postingModeNext = mode['posting_mode_next'] as String? ?? '';
+      _modeSwitchWeek  = mode['mode_switch_week']  as String? ?? '';
     });
   }
 
@@ -71,6 +83,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _sectionTitle('내 플랜'),
             _planCard(),
+            if (_tier >= 1 && _postingMode.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _postingModeCard(),
+            ],
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 16),
@@ -325,6 +341,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _postingModeCard() {
+    final modeLabels = {
+      'intensive': '정보성 집중',
+      'mixed':     '균형 혼합',
+    };
+    final modeDescs = {
+      'intensive': '정보성 3개+사례형 1개/일 (주 20개)',
+      'mixed':     '정보성 1개/일+사례형 3개/주 (주 8개)',
+    };
+    final curLabel  = modeLabels[_postingMode]  ?? _postingMode;
+    final nextLabel = modeLabels[_postingModeNext] ?? '';
+    final hasPending = _postingModeNext.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.04),
+              blurRadius: 4, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.calendar_month_outlined,
+                  size: 18, color: Color(0xFF03C75A)),
+              const SizedBox(width: 8),
+              const Text('포스팅 모드',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(curLabel,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF1B5E20),
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(modeDescs[_postingMode] ?? '',
+              style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          if (hasPending) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '다음 주($_modeSwitchWeek)부터 [$nextLabel]으로 전환 예정',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF795548)),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          const Text('모드를 바꾸려면 채팅에서 말씀해 주세요.',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
         ],
       ),
     );

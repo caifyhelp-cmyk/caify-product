@@ -161,6 +161,35 @@ class ApiService {
     }
   }
 
+  // ── 포스팅 모드 조회/변경 ─────────────────────────────────────
+  static Future<Map<String, dynamic>?> fetchPostingMode() async {
+    final cfg = await loadConfig();
+    if ((cfg['apiBase'] as String).isEmpty) return null;
+    try {
+      final res = await http.get(
+        Uri.parse('${cfg['apiBase']}/api/posting-mode'),
+        headers: await authHeaders(),
+      ).timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) { return null; }
+  }
+
+  /// mode: 'intensive' | 'mixed'
+  static Future<Map<String, dynamic>> requestModeChange(String mode) async {
+    final cfg = await loadConfig();
+    try {
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/posting-mode'),
+        headers: await authHeaders(),
+        body: jsonEncode({'mode': mode}),
+      ).timeout(const Duration(seconds: 10));
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': '서버 연결 실패: $e'};
+    }
+  }
+
   // ── 발행 완료 통보 ───────────────────────────────────────────
   static Future<bool> markPublished(int postId) async {
     final cfg = await loadConfig();

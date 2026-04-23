@@ -9,6 +9,7 @@ enum MsgType {
   sessionExpired,      // 세션 만료 → 없음
   workflowUpdated,     // 워크플로우 커스터마이징 적용 완료
   workflowProvisioned, // 유료 플랜 활성화 + 워크플로우 생성
+  modeChanged,         // 포스팅 모드 변경 예약 완료
   userText,            // 고객이 직접 입력한 메시지
 }
 
@@ -84,6 +85,7 @@ class ChatMessage {
       case 'session.expired':      return MsgType.sessionExpired;
       case 'workflow.updated':     return MsgType.workflowUpdated;
       case 'workflow.provisioned': return MsgType.workflowProvisioned;
+      case 'mode.changed':         return MsgType.modeChanged;
       default:                     return MsgType.userText;
     }
   }

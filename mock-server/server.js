@@ -68,7 +68,8 @@ function loadDb() {
 function saveDb() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DB_FILE, JSON.stringify({ posts, messages, nextPostId, nextMsgId }, null, 2));
+    fs.writeFileSync(DB_FILE, JSON.stringify(
+      { posts, messages, nextPostId, nextMsgId, publishQueue, nextQueueId }, null, 2));
   } catch (e) {
     console.warn('[db] 파일 저장 실패:', e.message);
   }
@@ -186,10 +187,12 @@ const DEFAULT_MESSAGES = [
 
 // 파일에서 복원하거나 기본값 사용
 const savedDb = loadDb();
-let posts = savedDb?.posts ?? DEFAULT_POSTS;
-let messages = savedDb?.messages ?? DEFAULT_MESSAGES;
-let nextPostId = savedDb?.nextPostId ?? 5;
-let nextMsgId = savedDb?.nextMsgId ?? 4;
+let posts        = savedDb?.posts        ?? DEFAULT_POSTS;
+let messages     = savedDb?.messages     ?? DEFAULT_MESSAGES;
+let publishQueue = savedDb?.publishQueue ?? [];
+let nextPostId   = savedDb?.nextPostId   ?? 5;
+let nextMsgId    = savedDb?.nextMsgId    ?? 4;
+let nextQueueId  = savedDb?.nextQueueId  ?? 1;
 
 // ── 인메모리 DB (members는 자격증명이므로 코드에서 관리) ──────────
 // caify_member 테이블 (실제: id=PK/member_pk, member_id=로그인ID)
@@ -256,6 +259,9 @@ const prompts = [
     forbidden_phrases: '최고, 1등, 완벽',
     is_active: 1,
     timer: null,
+    posting_mode: 'mixed',       // 'intensive' | 'mixed'
+    posting_mode_next: null,     // 다음 주 전환 예정 모드
+    mode_switch_week: null,      // 전환 적용 주 (ISO 'YYYY-WNN')
   },
   {
     id: 202,
@@ -282,6 +288,9 @@ const prompts = [
     forbidden_phrases: '',
     is_active: 1,
     timer: null,
+    posting_mode: 'intensive',
+    posting_mode_next: null,
+    mode_switch_week: null,
   },
 ];
 
@@ -768,6 +777,11 @@ app.get('/api/messages', requirePaid, (req, res) => {
 // ─── 워크플로우 커스터마이징 인텐트 감지 ─────────────────────────
 function detectWorkflowIntent(text) {
   const t = text;
+  // 포스팅 모드 변경 (우선 체크)
+  if (/집중.*모드|정보성.*많이|많이.*정보성|정보성.*위주|3개.*포스팅|포스팅.*3개|intensive/.test(t)) return 'mode_intensive';
+  if (/혼합.*모드|균형.*모드|섞어.*쓰|mixed|사례형.*줄|적게.*포스팅/.test(t))                      return 'mode_mixed';
+  if (/포스팅.*모드|모드.*바꿔|모드.*변경|발행.*방식.*바꿔/.test(t))                               return 'mode_ask';
+  // 콘텐츠 커스터마이징
   if (/톤|분위기|어조|친근|격식|전문적|말투|글체|문체/.test(t)) return 'tone';
   if (/길이|짧게|길게|간결|상세|분량|글자/.test(t))             return 'length';
   if (/주제|키워드|토픽|다뤄|써줘|다루/.test(t))                return 'topic';
@@ -819,7 +833,38 @@ app.post('/api/messages', requirePaid, (req, res) => {
   const intent = detectWorkflowIntent(text.trim());
   let replyType, replyText, replyMeta = null;
 
-  if (intent && member.tier === 1) {
+  if (intent === 'mode_intensive' && member.tier === 1) {
+    const prompt = prompts.find(p => p.member_pk === member.id);
+    if (prompt?.posting_mode === 'intensive' && !prompt?.posting_mode_next) {
+      replyType = 'user_text';
+      replyText = '이미 정보성 집중 모드로 운영 중이에요!\n\n• 정보성(info·promo·plusA) 각 1개/일 + 사례형 1개/일 (월~금)\n• 주당 최대 20개 포스팅';
+    } else {
+      const switchWk = nextISOWeek();
+      if (prompt) { prompt.posting_mode_next = 'intensive'; prompt.mode_switch_week = switchWk; }
+      replyType = 'mode.changed';
+      replyText = `✅ 다음 주(${switchWk})부터 정보성 집중 모드로 전환됩니다!\n\n• 정보성(info·promo·plusA) 각 1개/일 + 사례형 1개/일 (월~금)\n• 주당 최대 20개 포스팅`;
+      replyMeta = { mode: 'intensive', switch_week: switchWk };
+      saveDb();
+    }
+  } else if (intent === 'mode_mixed' && member.tier === 1) {
+    const prompt = prompts.find(p => p.member_pk === member.id);
+    if (prompt?.posting_mode === 'mixed' && !prompt?.posting_mode_next) {
+      replyType = 'user_text';
+      replyText = '이미 균형 혼합 모드로 운영 중이에요!\n\n• 정보성 1개/일 (월~금) + 사례형 3개/주 (월·수·금)\n• 주당 최대 8개 포스팅';
+    } else {
+      const switchWk = nextISOWeek();
+      if (prompt) { prompt.posting_mode_next = 'mixed'; prompt.mode_switch_week = switchWk; }
+      replyType = 'mode.changed';
+      replyText = `✅ 다음 주(${switchWk})부터 균형 혼합 모드로 전환됩니다!\n\n• 정보성 1개/일 (월~금) + 사례형 3개/주 (월·수·금)\n• 주당 최대 8개 포스팅`;
+      replyMeta = { mode: 'mixed', switch_week: switchWk };
+      saveDb();
+    }
+  } else if (intent === 'mode_ask' && member.tier === 1) {
+    const prompt = prompts.find(p => p.member_pk === member.id);
+    const cur = prompt?.posting_mode ?? 'mixed';
+    replyType = 'user_text';
+    replyText = `현재 [${POSTING_MODES[cur]?.label}]으로 운영 중이에요.\n\n변경 가능한 모드:\n• 정보성 집중 — 정보성 3개+사례형 1개/일 (주 20개)\n• 균형 혼합 — 정보성 1개/일+사례형 3개/주 (주 8개)\n\n"정보성 집중 모드로 바꿔줘" 또는 "혼합 모드로 바꿔줘"라고 말씀해 주세요!`;
+  } else if (intent && member.tier === 1) {
     // 유료 고객 + 워크플로우 커스터마이징 요청
     // 실서버: 여기서 n8n API 호출해 워크플로우 파라미터 업데이트
     replyType = 'workflow.updated';
@@ -890,6 +935,256 @@ app.post('/api/messages/:id/read', (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// ════════════════════════════════════════════════════════════════
+// 포스팅 모드 시스템
+//
+// intensive : info+promo+plusA+case 매일 월~금 → 20개/주
+// mixed     : info 매일 월~금 + case 월·수·금 → 8개/주
+//
+// 모드 변경 → 다음 주 월요일부터 적용 (mode_switch_week에 예약 저장)
+// caify_publish_queue 테이블: 매주 월요일 00시에 해당 주 row 생성
+// Queue Worker(n8n)가 5분마다 publish_date=오늘인 row 픽업 → 서브워크플로우 실행
+// ════════════════════════════════════════════════════════════════
+
+const POSTING_MODES = {
+  intensive: {
+    label: '정보성 집중 (정보성 3개+사례형 1개/일)',
+    slots: [
+      { type: 'info',  days: [1,2,3,4,5] },
+      { type: 'promo', days: [1,2,3,4,5] },
+      { type: 'plusA', days: [1,2,3,4,5] },
+      { type: 'case',  days: [1,2,3,4,5] },
+    ],
+  },
+  mixed: {
+    label: '균형 혼합 (정보성 1개/일 + 사례형 3개/주)',
+    slots: [
+      { type: 'info', days: [1,2,3,4,5] },
+      { type: 'case', days: [1,3,5] },
+    ],
+  },
+};
+
+// ISO 주 문자열 (예: '2026-W18')
+function getISOWeek(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const w1 = new Date(d.getFullYear(), 0, 4);
+  const wn = 1 + Math.round(((d - w1) / 864e5 - 3 + (w1.getDay() + 6) % 7) / 7);
+  return `${d.getFullYear()}-W${String(wn).padStart(2, '0')}`;
+}
+
+// 해당 ISO 주의 월요일 Date 반환
+function mondayOfISOWeek(isoWeek) {
+  const [year, w] = isoWeek.split('-W').map(Number);
+  const jan4 = new Date(year, 0, 4);
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - (jan4.getDay() + 6) % 7 + (w - 1) * 7);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+// 다음 주 ISO 주 문자열
+function nextISOWeek() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return getISOWeek(d);
+}
+
+// 주어진 주의 큐 row 생성 (caify_publish_queue 삽입용)
+function generateWeeklyQueue(memberPk, mode, isoWeek) {
+  const slots = POSTING_MODES[mode]?.slots ?? POSTING_MODES.mixed.slots;
+  const weekStart = mondayOfISOWeek(isoWeek);
+  const rows = [];
+
+  for (const slot of slots) {
+    for (const dayOfWeek of slot.days) {
+      // dayOfWeek: 1=월, 2=화, ..., 5=금
+      const d = new Date(weekStart);
+      d.setDate(d.getDate() + (dayOfWeek - 1));
+      rows.push({
+        id:            nextQueueId++,
+        member_pk:     memberPk,
+        publish_date:  d.toISOString().split('T')[0],
+        publish_slot:  slot.type,
+        workflow_type: slot.type,
+        status:        'start',
+        lock_id:       null,
+        locked_at:     null,
+        completed_at:  null,
+        fail_reason:   null,
+        created_at:    new Date().toISOString(),
+        updated_at:    new Date().toISOString(),
+      });
+    }
+  }
+  return rows;
+}
+
+// 주 전환 시 대기 중인 모드 변경 적용 + 큐 생성
+function applyPendingModeChanges() {
+  const currentWeek = getISOWeek();
+  let changed = 0;
+
+  for (const p of prompts) {
+    if (p.posting_mode_next && p.mode_switch_week === currentWeek) {
+      p.posting_mode = p.posting_mode_next;
+      p.posting_mode_next = null;
+      p.mode_switch_week = null;
+      const rows = generateWeeklyQueue(p.member_pk, p.posting_mode, currentWeek);
+      publishQueue.push(...rows);
+      console.log(`[mode] member=${p.member_pk} → ${p.posting_mode} 전환, 큐 ${rows.length}개 생성`);
+      changed++;
+    }
+  }
+  if (changed > 0) saveDb();
+  return changed;
+}
+
+// 매주 월요일 00:10에 applyPendingModeChanges 자동 실행
+function scheduleWeeklyModeApply() {
+  function msUntilNextMonday() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setDate(now.getDate() + ((8 - now.getDay()) % 7 || 7));
+    next.setHours(0, 10, 0, 0);
+    return next - now;
+  }
+  setTimeout(function run() {
+    applyPendingModeChanges();
+    setTimeout(run, 7 * 24 * 60 * 60 * 1000);
+  }, msUntilNextMonday());
+}
+scheduleWeeklyModeApply();
+
+// ── GET /api/posting-mode ─────────────────────────────────────
+
+app.get('/api/posting-mode', requirePaid, (req, res) => {
+  const member = getMemberByToken(req);
+  const prompt = prompts.find(p => p.member_pk === member.id);
+
+  const mode     = prompt?.posting_mode      ?? 'mixed';
+  const modeNext = prompt?.posting_mode_next ?? null;
+  const switchWk = prompt?.mode_switch_week  ?? null;
+
+  // 이번 주 + 다음 주 큐 통계
+  const thisWeek = getISOWeek();
+  const nxtWeek  = nextISOWeek();
+  const countQueue = (week) =>
+    publishQueue.filter(q => q.member_pk === member.id &&
+      getISOWeek(new Date(q.publish_date)) === week).length;
+
+  res.json({
+    ok: true,
+    posting_mode:      mode,
+    posting_mode_next: modeNext,
+    mode_switch_week:  switchWk,
+    mode_label:        POSTING_MODES[mode]?.label,
+    mode_next_label:   modeNext ? POSTING_MODES[modeNext]?.label : null,
+    this_week_count:   countQueue(thisWeek),
+    next_week_count:   modeNext ? POSTING_MODES[modeNext]?.slots.reduce((s, sl) => s + sl.days.length, 0) : null,
+    modes: Object.fromEntries(Object.entries(POSTING_MODES).map(([k, v]) => [k, v.label])),
+  });
+});
+
+// ── POST /api/posting-mode ────────────────────────────────────
+// 모드 변경 요청 — 다음 주부터 적용
+
+app.post('/api/posting-mode', requirePaid, (req, res) => {
+  const member = getMemberByToken(req);
+  const { mode } = req.body;
+
+  if (!POSTING_MODES[mode]) {
+    return res.status(422).json({ ok: false, error: '유효하지 않은 모드입니다. (intensive | mixed)' });
+  }
+
+  const prompt = prompts.find(p => p.member_pk === member.id);
+  if (!prompt) return res.status(404).json({ ok: false, error: '고객 설정을 찾을 수 없습니다.' });
+
+  if (prompt.posting_mode === mode && !prompt.posting_mode_next) {
+    return res.json({ ok: true, message: '이미 해당 모드입니다.', posting_mode: mode });
+  }
+
+  const switchWk = nextISOWeek();
+  prompt.posting_mode_next = mode;
+  prompt.mode_switch_week  = switchWk;
+
+  const modeLabel = POSTING_MODES[mode].label;
+  messages.push({
+    id:         nextMsgId++,
+    member_pk:  member.id,
+    type:       'mode.changed',
+    is_system:  true,
+    text:       `✅ 포스팅 모드 변경이 예약됐습니다!\n\n다음 주(${switchWk})부터 [${modeLabel}]로 전환됩니다.\n\n${mode === 'intensive'
+      ? '• 정보성(info·promo·plusA) 각 1개/일 + 사례형 1개/일 (월~금)\n• 주당 최대 20개 포스팅'
+      : '• 정보성(info) 1개/일 (월~금) + 사례형 3개/주 (월·수·금)\n• 주당 최대 8개 포스팅'}`,
+    post_id: null, post_title: null, post_html: null,
+    meta:    { mode, switch_week: switchWk },
+    actions: [],
+    read:    false,
+    created_at: new Date().toISOString(),
+  });
+
+  saveDb();
+  console.log(`[mode] member=${member.id} 예약: ${prompt.posting_mode} → ${mode} (${switchWk})`);
+
+  res.json({
+    ok:                true,
+    posting_mode:      prompt.posting_mode,
+    posting_mode_next: mode,
+    mode_switch_week:  switchWk,
+  });
+});
+
+// ── GET /api/posting-queue (디버그/관리용) ─────────────────────
+
+app.get('/api/posting-queue', requirePaid, (req, res) => {
+  const member = getMemberByToken(req);
+  const week   = req.query.week || getISOWeek();
+
+  const rows = publishQueue.filter(q =>
+    q.member_pk === member.id &&
+    getISOWeek(new Date(q.publish_date)) === week
+  ).sort((a, b) => a.publish_date.localeCompare(b.publish_date));
+
+  res.json({ ok: true, week, rows, total: rows.length });
+});
+
+// ── POST /admin/generate-queue (관리자: 큐 수동 생성) ──────────
+
+app.post('/admin/generate-queue', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member || !isAdmin(member)) {
+    return res.status(403).json({ ok: false, error: '관리자 권한이 필요합니다.' });
+  }
+
+  const { member_pk, week } = req.body;
+  const targetWeek = week || nextISOWeek();
+  const targets = member_pk
+    ? prompts.filter(p => p.member_pk === parseInt(member_pk, 10))
+    : prompts;
+
+  let total = 0;
+  for (const p of targets) {
+    // 기존 해당 주 row 삭제 후 재생성
+    const before = publishQueue.length;
+    for (let i = publishQueue.length - 1; i >= 0; i--) {
+      if (publishQueue[i].member_pk === p.member_pk &&
+          getISOWeek(new Date(publishQueue[i].publish_date)) === targetWeek) {
+        publishQueue.splice(i, 1);
+      }
+    }
+    const rows = generateWeeklyQueue(p.member_pk, p.posting_mode, targetWeek);
+    publishQueue.push(...rows);
+    total += rows.length;
+    console.log(`[queue] member=${p.member_pk} ${targetWeek} → ${rows.length}개 생성`);
+  }
+
+  saveDb();
+  res.json({ ok: true, week: targetWeek, total });
 });
 
 // ════════════════════════════════════════════════════════════════
