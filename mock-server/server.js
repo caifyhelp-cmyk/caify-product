@@ -225,8 +225,13 @@ const members = [
     passwd: 'password123', // 실서버: password_hash()
     company_name: '테스트 치과',
     api_token: 'mock-token-testuser',
-    tier: 0,          // 0=무료, 1=유료
-    n8n_workflow_ids: null,
+    tier: 1,          // 0=무료, 1=유료
+    n8n_workflow_ids: {
+      case:  'wf-testuser-case',
+      info:  'wf-testuser-info',
+      promo: 'wf-testuser-promo',
+      plusA: 'wf-testuser-plus',
+    },
   },
   {
     id: 2,
