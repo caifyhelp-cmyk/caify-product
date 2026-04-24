@@ -346,6 +346,32 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> updateWorkflow({
+    List<String>? keywords,
+    String? schedule,
+    List<Map<String, dynamic>>? workflows,
+  }) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    AppLogger.info('WF', 'POST /api/workflow/update');
+    try {
+      final body = <String, dynamic>{'member_pk': cfg['memberId']!};
+      if (keywords != null) body['keywords'] = keywords;
+      if (schedule != null) body['schedule'] = schedule;
+      if (workflows != null) body['workflows'] = workflows;
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/workflow/update'),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 10));
+      AppLogger.info('WF', 'update ← ${res.statusCode} ${res.body}');
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (e) {
+      AppLogger.error('WF', 'update ERR — $e');
+      return {'ok': false, 'error': '연결 실패: $e'};
+    }
+  }
+
   // ── 키워드 순위 ──────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchRanks() async {
     final cfg = await loadConfig();

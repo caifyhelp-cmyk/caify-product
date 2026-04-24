@@ -13,10 +13,15 @@ class WorkflowScreen extends StatefulWidget {
 class _WorkflowScreenState extends State<WorkflowScreen> {
   Map<String, dynamic>? _data;
   bool _loading = true;
+  bool _saving   = false;
   bool _provisioning = false;
-  bool _modifying = false;
-  final _modifyCtrl = TextEditingController();
-  String? _modifyResult;
+
+  // 편집 상태
+  late List<String> _keywords;
+  late String _schedule;
+  late List<Map<String, dynamic>> _workflows;
+
+  final _kwCtrl = TextEditingController();
 
   static const _typeLabels = {
     'case':  '케이스형',
@@ -24,6 +29,14 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     'promo': '프로모션형',
     'plusA': '플러스A형',
   };
+
+  static const _scheduleOptions = [
+    '매일 오전 10시',
+    '월·수·금 오전 10시',
+    '화·목 오전 10시',
+    '주 1회 (월요일)',
+    '주 1회 (금요일)',
+  ];
 
   @override
   void initState() {
@@ -33,21 +46,51 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
 
   @override
   void dispose() {
-    _modifyCtrl.dispose();
+    _kwCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     AppLogger.info('WF_UI', '워크플로우 화면 로드 시작');
-    setState(() { _loading = true; _modifyResult = null; });
+    setState(() => _loading = true);
     final data = await ApiService.fetchWorkflow();
-    if (mounted) {
-      setState(() { _data = data; _loading = false; });
-      if (data == null) {
-        AppLogger.warn('WF_UI', '워크플로우 데이터 null — 서버 응답 없음');
-      } else {
-        AppLogger.info('WF_UI', '워크플로우 로드 완료: provisioned=${data['provisioned']} data=$data');
+    if (!mounted) return;
+    setState(() {
+      _data = data;
+      _loading = false;
+      if (data != null && data['provisioned'] == true) {
+        _keywords  = List<String>.from(data['keywords'] ?? []);
+        _schedule  = (data['schedule'] as String?) ?? _scheduleOptions[0];
+        _workflows = List<Map<String, dynamic>>.from(
+          (data['workflows'] as List?)?.map((e) => Map<String, dynamic>.from(e)) ?? [],
+        );
       }
+    });
+    if (data == null) AppLogger.warn('WF_UI', '워크플로우 데이터 null');
+  }
+
+  Future<void> _save() async {
+    AppLogger.info('WF_UI', '워크플로우 저장 시작');
+    setState(() => _saving = true);
+    final res = await ApiService.updateWorkflow(
+      keywords:  _keywords,
+      schedule:  _schedule,
+      workflows: _workflows.map((w) => {'type': w['type'], 'active': w['active']}).toList(),
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (res['ok'] == true) {
+      AppLogger.info('WF_UI', '워크플로우 저장 완료');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('저장됐습니다.'), backgroundColor: Color(0xFF03C75A),
+            duration: Duration(seconds: 2)),
+      );
+      await _load();
+    } else {
+      AppLogger.error('WF_UI', '저장 실패: ${res['error']}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('오류: ${res['error'] ?? '저장 실패'}'), backgroundColor: Colors.red),
+      );
     }
   }
 
@@ -57,13 +100,11 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     final res = await ApiService.provisionWorkflow();
     if (!mounted) return;
     if (res['ok'] == true) {
-      AppLogger.info('WF_UI', '프로비저닝 성공: ${res['message']}');
+      AppLogger.info('WF_UI', '프로비저닝 성공');
       await _load();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(res['message'] ?? '워크플로우가 설정됐습니다.'),
-          backgroundColor: const Color(0xFF03C75A),
-        ),
+        SnackBar(content: Text(res['message'] ?? '워크플로우가 설정됐습니다.'),
+            backgroundColor: const Color(0xFF03C75A)),
       );
     } else {
       AppLogger.error('WF_UI', '프로비저닝 실패: ${res['error']}');
@@ -74,30 +115,21 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     setState(() => _provisioning = false);
   }
 
-  Future<void> _sendModify() async {
-    final text = _modifyCtrl.text.trim();
-    if (text.isEmpty || _modifying) return;
-    AppLogger.info('WF_UI', '수정 요청: "$text"');
-    setState(() { _modifying = true; _modifyResult = null; });
-    final res = await ApiService.modifyWorkflow(text);
-    if (!mounted) return;
-    if (res['ok'] == true) {
-      AppLogger.info('WF_UI', '수정 성공: ${res['message']}');
-    } else {
-      AppLogger.error('WF_UI', '수정 실패: ${res['error']}');
-    }
-    setState(() {
-      _modifying = false;
-      _modifyResult = res['ok'] == true ? '✅ ${res['message']}' : '❌ ${res['error'] ?? '오류'}';
-    });
-    if (res['ok'] == true) {
-      _modifyCtrl.clear();
-      await _load();
-    }
+  void _addKeyword() {
+    final kw = _kwCtrl.text.trim();
+    if (kw.isEmpty || _keywords.contains(kw)) return;
+    setState(() { _keywords.add(kw); _kwCtrl.clear(); });
+  }
+
+  void _removeKeyword(String kw) => setState(() => _keywords.remove(kw));
+
+  void _toggleWorkflow(int idx, bool val) {
+    setState(() => _workflows[idx]['active'] = val);
   }
 
   @override
   Widget build(BuildContext context) {
+    final provisioned = _data?['provisioned'] == true;
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -107,152 +139,202 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
         elevation: 0,
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+          if (provisioned)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: TextButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('저장', style: TextStyle(color: Colors.white,
+                        fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF03C75A)))
-          : _buildBody(),
+          : provisioned ? _buildEditor() : _buildNotProvisioned(),
     );
   }
 
-  Widget _buildBody() {
-    final provisioned = _data?['provisioned'] == true;
-
-    if (!provisioned) return _buildNotProvisioned();
-
-    final workflows = List<Map<String, dynamic>>.from(_data?['workflows'] ?? []);
-    final keywords  = List<String>.from(_data?['keywords'] ?? []);
-    final schedule  = _data?['schedule'] as String?;
-    final lastMod   = _data?['last_modified'] as String?;
-
+  Widget _buildEditor() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 워크플로우 카드들
+          // ── 워크플로우 유형 토글 ──────────────────────────────
           _sectionTitle('워크플로우 유형'),
-          const SizedBox(height: 8),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 2.0,
-            children: workflows.map((wf) => _buildWfCard(wf)).toList(),
+          const SizedBox(height: 6),
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              children: _workflows.asMap().entries.map((e) {
+                final idx  = e.key;
+                final wf   = e.value;
+                final type = wf['type'] as String? ?? '';
+                final label = _typeLabels[type] ?? type;
+                final active = wf['active'] == true;
+                final isCase = type == 'case';
+                return Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        _wfIcon(type),
+                        color: active ? const Color(0xFF03C75A) : Colors.grey,
+                        size: 22,
+                      ),
+                      title: Text(label,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: active ? Colors.black87 : Colors.grey,
+                          )),
+                      subtitle: isCase && active
+                          ? GestureDetector(
+                              onTap: () async {
+                                AppLogger.info('WF_UI', '케이스형 사례 제출 탭');
+                                await showCaseSubmitSheet(context);
+                              },
+                              child: const Text('탭해서 사례 제출 →',
+                                  style: TextStyle(color: Color(0xFF03C75A), fontSize: 12)),
+                            )
+                          : null,
+                      trailing: Switch(
+                        value: active,
+                        activeColor: const Color(0xFF03C75A),
+                        onChanged: (v) => _toggleWorkflow(idx, v),
+                      ),
+                    ),
+                    if (idx < _workflows.length - 1)
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                  ],
+                );
+              }).toList(),
+            ),
           ),
 
           const SizedBox(height: 20),
 
-          // 키워드
-          _sectionTitle('타겟 키워드'),
-          const SizedBox(height: 8),
+          // ── 발행 일정 ────────────────────────────────────────
+          _sectionTitle('발행 일정'),
+          const SizedBox(height: 6),
           Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: keywords.isEmpty
-                  ? const Text('키워드 미설정', style: TextStyle(color: Colors.grey))
-                  : Wrap(
-                      spacing: 8, runSpacing: 6,
-                      children: keywords.map((k) => Chip(
-                        label: Text(k, style: const TextStyle(fontSize: 13)),
-                        backgroundColor: const Color(0xFFE8F5E9),
-                        side: const BorderSide(color: Color(0xFF03C75A), width: 0.8),
-                      )).toList(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _scheduleOptions.contains(_schedule) ? _schedule : _scheduleOptions[0],
+                  isExpanded: true,
+                  icon: const Icon(Icons.expand_more, color: Color(0xFF03C75A)),
+                  items: _scheduleOptions.map((s) => DropdownMenuItem(
+                    value: s,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 16, color: Color(0xFF03C75A)),
+                        const SizedBox(width: 10),
+                        Text(s, style: const TextStyle(fontSize: 14)),
+                      ],
                     ),
+                  )).toList(),
+                  onChanged: (v) { if (v != null) setState(() => _schedule = v); },
+                ),
+              ),
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
 
-          // 발행 일정
-          if (schedule != null) ...[
-            _sectionTitle('발행 일정'),
-            const SizedBox(height: 8),
-            Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              child: ListTile(
-                leading: const Icon(Icons.schedule, color: Color(0xFF03C75A)),
-                title: Text(schedule, style: const TextStyle(fontSize: 14)),
-                subtitle: lastMod != null
-                    ? Text('마지막 수정: ${_formatDate(lastMod)}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey))
-                    : null,
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-
-          // 수정 요청
-          _sectionTitle('수정 요청'),
-          const SizedBox(height: 8),
+          // ── 타겟 키워드 ──────────────────────────────────────
+          _sectionTitle('타겟 키워드'),
+          const SizedBox(height: 6),
           Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '키워드 변경, 발행 일정, 글 스타일 등 원하는 내용을 입력하면 워크플로우에 반영됩니다.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.5),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _modifyCtrl,
-                    minLines: 3,
-                    maxLines: 5,
-                    decoration: InputDecoration(
-                      hintText: '예) 키워드: 임플란트, 치아교정\n예) 발행 일정을 매일로 변경해주세요\n예) 글 톤을 더 전문적으로 써주세요',
-                      hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.all(12),
+                  // 키워드 칩
+                  if (_keywords.isEmpty)
+                    const Text('키워드를 추가하세요',
+                        style: TextStyle(color: Colors.grey, fontSize: 13))
+                  else
+                    Wrap(
+                      spacing: 8, runSpacing: 6,
+                      children: _keywords.map((kw) => Chip(
+                        label: Text(kw, style: const TextStyle(fontSize: 13)),
+                        backgroundColor: const Color(0xFFE8F5E9),
+                        side: const BorderSide(color: Color(0xFF03C75A), width: 0.8),
+                        deleteIcon: const Icon(Icons.close, size: 14),
+                        deleteIconColor: Colors.grey,
+                        onDeleted: () => _removeKeyword(kw),
+                      )).toList(),
                     ),
-                  ),
+
                   const SizedBox(height: 12),
-                  if (_modifyResult != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: _modifyResult!.startsWith('✅')
-                            ? const Color(0xFFE8F5E9)
-                            : const Color(0xFFFCE8E6),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _modifyResult!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: _modifyResult!.startsWith('✅')
-                              ? const Color(0xFF2E7D32)
-                              : const Color(0xFFC62828),
+
+                  // 키워드 입력
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _kwCtrl,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _addKeyword(),
+                          decoration: InputDecoration(
+                            hintText: '키워드 입력 후 + 또는 엔터',
+                            hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                            filled: true,
+                            fillColor: const Color(0xFFF5F5F5),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          ),
+                          style: const TextStyle(fontSize: 14),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _modifying ? null : _sendModify,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF03C75A),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _addKeyword,
+                        child: Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF03C75A),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
                       ),
-                      child: _modifying
-                          ? const SizedBox(
-                              width: 18, height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text('수정 요청 보내기'),
-                    ),
+                    ],
                   ),
                 ],
               ),
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── 저장 버튼 ────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF03C75A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('변경사항 저장', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
             ),
           ),
           const SizedBox(height: 20),
@@ -261,119 +343,53 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     );
   }
 
-  Widget _buildNotProvisioned() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.account_tree_outlined, size: 72, color: Colors.grey),
-            const SizedBox(height: 20),
-            const Text(
-              '워크플로우가 아직 설정되지 않았습니다.',
+  Widget _buildNotProvisioned() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.account_tree_outlined, size: 72, color: Colors.grey),
+          const SizedBox(height: 20),
+          const Text('워크플로우가 아직 설정되지 않았습니다.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'AI 블로그 자동화를 시작하려면\n워크플로우를 생성하세요.',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('AI 블로그 자동화를 시작하려면\n워크플로우를 생성하세요.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.6),
+              style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.6)),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: _provisioning ? null : _provision,
+            icon: _provisioning
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.rocket_launch_outlined, size: 18),
+            label: Text(_provisioning ? '생성 중...' : '워크플로우 시작하기'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF03C75A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              textStyle: const TextStyle(fontSize: 15),
             ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: _provisioning ? null : _provision,
-              icon: _provisioning
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.rocket_launch_outlined, size: 18),
-              label: Text(_provisioning ? '생성 중...' : '워크플로우 시작하기'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF03C75A),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                textStyle: const TextStyle(fontSize: 15),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWfCard(Map<String, dynamic> wf) {
-    final type   = wf['type'] as String? ?? '';
-    final active = wf['active'] == true;
-    final label  = _typeLabels[type] ?? type;
-    final isCase = type == 'case';
-
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: active ? const Color(0xFF03C75A) : Colors.grey.shade300,
-          width: active ? 1.5 : 1,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: isCase && active
-            ? () async {
-                AppLogger.info('WF_UI', '케이스형 카드 탭 → 사례 제출 시트 열기');
-                await showCaseSubmitSheet(context);
-              }
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Icon(
-                active ? Icons.check_circle : Icons.pause_circle_outline,
-                color: active ? const Color(0xFF03C75A) : Colors.grey,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                    Text(
-                      active
-                          ? (isCase ? '탭해서 사례 제출' : '활성')
-                          : '비활성',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: active ? const Color(0xFF03C75A) : Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isCase && active)
-                const Icon(Icons.edit_note, size: 16, color: Color(0xFF03C75A)),
-            ],
           ),
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 
   Widget _sectionTitle(String text) => Text(
-        text,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
-      );
+    text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
+  );
 
-  String _formatDate(String iso) {
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return iso;
+  IconData _wfIcon(String type) {
+    switch (type) {
+      case 'case':  return Icons.medical_services_outlined;
+      case 'info':  return Icons.info_outline;
+      case 'promo': return Icons.campaign_outlined;
+      case 'plusA': return Icons.star_border;
+      default:      return Icons.account_tree_outlined;
     }
   }
 }

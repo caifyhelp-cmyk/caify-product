@@ -1394,6 +1394,36 @@ app.post('/api/workflow/provision', (req, res) => {
   res.json({ ok: true, message: `워크플로우 4개 생성됨 (${name})`, workflows });
 });
 
+// POST /api/workflow/update — 직접 필드 수정 (키워드/스케줄/워크플로우 활성화)
+app.post('/api/workflow/update', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.body.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  const wf = memberWorkflows[pk];
+  if (!wf) return res.status(404).json({ ok: false, error: '워크플로우가 설정되지 않았습니다.' });
+
+  if (Array.isArray(req.body.keywords)) {
+    wf.keywords = req.body.keywords.map(k => k.trim()).filter(Boolean);
+  }
+  if (typeof req.body.schedule === 'string' && req.body.schedule.trim()) {
+    wf.schedule = req.body.schedule.trim();
+  }
+  if (Array.isArray(req.body.workflows)) {
+    req.body.workflows.forEach(({ type, active }) => {
+      const target = wf.workflows.find(w => w.type === type);
+      if (target) target.active = !!active;
+    });
+  }
+  wf.last_modified = new Date().toISOString();
+  saveDb();
+
+  console.log(` [workflow/update] member=${pk} keywords=${JSON.stringify(wf.keywords)} schedule="${wf.schedule}"`);
+  res.json({ ok: true, message: '워크플로우가 저장됐습니다.' });
+});
+
 app.post('/api/workflow/modify', (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
