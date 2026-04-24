@@ -4,6 +4,7 @@ import '../models/chat_message.dart';
 import '../models/post.dart';
 import '../services/chat_service.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 import 'post_viewer_screen.dart';
 import 'publish_screen.dart';
 
@@ -38,9 +39,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _load({bool initial = false}) async {
+    if (initial) AppLogger.info('CHAT', '채팅 초기 로드');
     final newMsgs = await ChatService.fetchMessages(
         afterId: initial ? 0 : _lastId);
     if (!mounted || newMsgs.isEmpty) return;
+    if (newMsgs.isNotEmpty) {
+      AppLogger.info('CHAT', '새 메시지 ${newMsgs.length}개 수신 (lastId=${newMsgs.last.id})');
+    }
     setState(() {
       if (initial) {
         _messages
@@ -74,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendText() async {
     final text = _textCtrl.text.trim();
     if (text.isEmpty || _sending) return;
+    AppLogger.info('CHAT', '메시지 전송: "$text"');
     _textCtrl.clear();
     setState(() => _sending = true);
     await ChatService.sendText(text);
@@ -83,6 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _doAction(ChatMessage msg, ChatAction action) async {
     final key = action.actionKey;
+    AppLogger.info('CHAT', '액션 버튼 탭: key=$key postId=${msg.postId}');
 
     if (key == 'view_post' && msg.postId != null) {
       // 포스트 뷰어 열기

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import 'log_viewer_screen.dart';
 import 'naver_link_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -75,7 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Container(
                           width: 36, height: 36,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF03C75A).withOpacity(0.1),
+                            color: const Color(0xFF03C75A).withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.person, color: Color(0xFF03C75A), size: 20),
@@ -206,7 +207,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _showLogViewer(context),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LogViewerScreen()),
+                    ),
                     icon: const Icon(Icons.list_alt, size: 18),
                     label: Text('로그 보기 (${AppLogger.entries.length}개)'),
                     style: ElevatedButton.styleFrom(
@@ -261,94 +265,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _showLogViewer(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        maxChildSize: 0.95,
-        minChildSize: 0.4,
-        builder: (_, scrollCtrl) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    const Text('발행 로그',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () async {
-                        await AppLogger.copyToClipboard();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('로그가 클립보드에 복사됐습니다'),
-                              backgroundColor: Color(0xFF03C75A),
-                            ),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.copy, size: 16, color: Color(0xFF03C75A)),
-                      label: const Text('전체 복사',
-                          style: TextStyle(color: Color(0xFF03C75A), fontSize: 13)),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Colors.white12),
-              Expanded(
-                child: AppLogger.entries.isEmpty
-                    ? const Center(
-                        child: Text('로그 없음\n발행 화면을 열면 로그가 쌓입니다',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white38, fontSize: 13)))
-                    : ListView.builder(
-                        controller: scrollCtrl,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        itemCount: AppLogger.entries.length,
-                        reverse: true,
-                        itemBuilder: (_, i) {
-                          final entries = AppLogger.entries;
-                          final e = entries[entries.length - 1 - i];
-                          final t = e.toString();
-                          Color color = Colors.white70;
-                          if (t.contains('[diag') || t.contains('[ready')) {
-                            color = const Color(0xFF80CBC4);
-                          } else if (t.contains('ok_') || t.contains('already_filled') || t.contains('ready')) {
-                            color = const Color(0xFF81C784);
-                          } else if (t.contains('no_') || t.contains('failed') || t.contains('err')) {
-                            color = const Color(0xFFEF9A9A);
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text(t,
-                                style: TextStyle(
-                                    fontFamily: 'monospace', fontSize: 11,
-                                    color: color, height: 1.4)),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _sectionTitle(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Text(text,
@@ -378,8 +294,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _save() async {
+    final base = _apiBaseCtrl.text.trim();
+    AppLogger.info('SETTINGS', '설정 저장: apiBase=$base memberId=${_memberIdCtrl.text.trim()}');
     await ApiService.saveConfig(
-      apiBase:  _apiBaseCtrl.text.trim(),
+      apiBase:  base,
       memberId: _memberIdCtrl.text.trim(),
       token:    _tokenCtrl.text.trim(),
     );
@@ -392,11 +310,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _testConnection() async {
+    final base = _apiBaseCtrl.text.trim();
+    AppLogger.info('SETTINGS', '연결 테스트: $base');
     setState(() { _testing = true; _testResult = ''; });
     try {
       final posts = await ApiService.fetchPosts();
+      AppLogger.info('SETTINGS', '연결 성공 — 포스팅 ${posts.length}개');
       setState(() { _testResult = '✅ 연결 성공 — 포스팅 ${posts.length}개 조회됨'; });
     } catch (e) {
+      AppLogger.error('SETTINGS', '연결 실패: $e');
       setState(() { _testResult = '❌ 연결 실패: $e'; });
     } finally {
       setState(() => _testing = false);

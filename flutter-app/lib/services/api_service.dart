@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
+import 'app_logger.dart';
 
 class ApiService {
   static const _keyBase       = 'apiBase';
@@ -70,6 +71,7 @@ class ApiService {
   }) async {
     final base = (apiBase?.isNotEmpty == true ? apiBase! : defaultApiBase)
         .replaceAll(RegExp(r'/$'), '');
+    AppLogger.info('API', 'POST $base/member/login [id=$memberId]');
     try {
       final res = await http.post(
         Uri.parse('$base/member/login'),
@@ -77,8 +79,10 @@ class ApiService {
         body: jsonEncode({'member_id': memberId, 'passwd': password}),
       ).timeout(const Duration(seconds: 10));
 
+      AppLogger.info('API', 'login ← ${res.statusCode} ${res.body.length}b');
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode == 200 && data['ok'] == true) {
+        AppLogger.info('API', 'login OK — pk=${data['member_pk']} tier=${data['tier']}');
         await saveConfig(
           apiBase:      base,
           memberId:     data['member_pk'].toString(),
@@ -89,8 +93,10 @@ class ApiService {
         );
         return {'ok': true, ...data};
       }
+      AppLogger.warn('API', 'login FAIL — ${data['error']}');
       return {'ok': false, 'error': data['error'] ?? '로그인 실패'};
     } catch (e) {
+      AppLogger.error('API', 'login ERR — $e');
       return {'ok': false, 'error': '서버 연결 실패: $e'};
     }
   }
@@ -101,12 +107,14 @@ class ApiService {
     final cfg = await loadConfig();
     if ((cfg['apiBase'] as String).isEmpty) return null;
 
+    AppLogger.info('API', 'GET /member/me');
     try {
       final res = await http.get(
         Uri.parse('${cfg['apiBase']}/member/me'),
         headers: await authHeaders(),
       ).timeout(const Duration(seconds: 10));
 
+      AppLogger.info('API', 'fetchMe ← ${res.statusCode}');
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (data['ok'] != true) return null;
@@ -120,7 +128,8 @@ class ApiService {
         hasWorkflows: data['has_workflows'] as bool? ?? false,
       );
       return data;
-    } catch (_) {
+    } catch (e) {
+      AppLogger.error('API', 'fetchMe ERR — $e');
       return null;
     }
   }
@@ -150,15 +159,21 @@ class ApiService {
     final uri = Uri.parse('${cfg['apiBase']}/api/posts')
         .replace(queryParameters: params);
 
+    AppLogger.info('API', 'GET /api/posts?status=$status');
     try {
       final res = await http.get(uri, headers: await _headers())
           .timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return [];
+      if (res.statusCode != 200) {
+        AppLogger.warn('API', 'fetchPosts ← ${res.statusCode}');
+        return [];
+      }
       final data = jsonDecode(res.body);
       final list = data is List ? data : (data['posts'] as List? ?? []);
+      AppLogger.info('API', 'fetchPosts ← ${res.statusCode} [${list.length}개]');
       return list.map((j) => Post.fromJson(j as Map<String, dynamic>)).toList();
-    } catch (_) {
-      return []; // 타임아웃·네트워크 오류 시 빈 목록 반환
+    } catch (e) {
+      AppLogger.error('API', 'fetchPosts ERR — $e');
+      return [];
     }
   }
 
@@ -166,27 +181,35 @@ class ApiService {
   static Future<Map<String, dynamic>?> fetchPostingMode() async {
     final cfg = await loadConfig();
     if ((cfg['apiBase'] as String).isEmpty) return null;
+    AppLogger.info('MODE', 'GET /api/posting-mode');
     try {
       final res = await http.get(
         Uri.parse('${cfg['apiBase']}/api/posting-mode'),
         headers: await authHeaders(),
       ).timeout(const Duration(seconds: 10));
+      AppLogger.info('MODE', 'fetchPostingMode ← ${res.statusCode} ${res.body}');
       if (res.statusCode != 200) return null;
       return jsonDecode(res.body) as Map<String, dynamic>;
-    } catch (_) { return null; }
+    } catch (e) {
+      AppLogger.error('MODE', 'fetchPostingMode ERR — $e');
+      return null;
+    }
   }
 
   /// mode: 'intensive' | 'mixed'
   static Future<Map<String, dynamic>> requestModeChange(String mode) async {
     final cfg = await loadConfig();
+    AppLogger.info('MODE', 'POST /api/posting-mode mode=$mode');
     try {
       final res = await http.post(
         Uri.parse('${cfg['apiBase']}/api/posting-mode'),
         headers: await authHeaders(),
         body: jsonEncode({'mode': mode}),
       ).timeout(const Duration(seconds: 10));
+      AppLogger.info('MODE', 'requestModeChange ← ${res.statusCode} ${res.body}');
       return jsonDecode(res.body) as Map<String, dynamic>;
     } catch (e) {
+      AppLogger.error('MODE', 'requestModeChange ERR — $e');
       return {'ok': false, 'error': '서버 연결 실패: $e'};
     }
   }
@@ -195,24 +218,34 @@ class ApiService {
   static Future<bool> markPublished(int postId) async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty) return false;
-
-    final res = await http.post(
-      Uri.parse('${cfg['apiBase']}/api/posts/$postId/published'),
-      headers: await _headers(),
-    );
-    return res.statusCode == 200 || res.statusCode == 204;
+    AppLogger.info('PUB', 'POST /api/posts/$postId/published');
+    try {
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/posts/$postId/published'),
+        headers: await _headers(),
+      );
+      AppLogger.info('PUB', 'markPublished ← ${res.statusCode}');
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (e) {
+      AppLogger.error('PUB', 'markPublished ERR — $e');
+      return false;
+    }
   }
 
   // ── 발행 실패 통보 ───────────────────────────────────────────
   static Future<void> markFailed(int postId, String reason) async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty) return;
-
-    await http.post(
-      Uri.parse('${cfg['apiBase']}/api/posts/$postId/failed'),
-      headers: await _headers(),
-      body: jsonEncode({'reason': reason}),
-    );
+    AppLogger.warn('PUB', 'POST /api/posts/$postId/failed reason=$reason');
+    try {
+      await http.post(
+        Uri.parse('${cfg['apiBase']}/api/posts/$postId/failed'),
+        headers: await _headers(),
+        body: jsonEncode({'reason': reason}),
+      );
+    } catch (e) {
+      AppLogger.error('PUB', 'markFailed ERR — $e');
+    }
   }
 
   // ── 네이버 블로그 ID ─────────────────────────────────────────
@@ -250,28 +283,45 @@ class ApiService {
   // ── 워크플로우 ───────────────────────────────────────────────
   static Future<Map<String, dynamic>?> fetchWorkflow() async {
     final cfg = await loadConfig();
-    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) return null;
+    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) {
+      AppLogger.warn('WF', 'fetchWorkflow — 서버/멤버 미설정');
+      return null;
+    }
+    AppLogger.info('WF', 'GET /api/workflow [pk=${cfg['memberId']}]');
     try {
       final uri = Uri.parse('${cfg['apiBase']}/api/workflow')
           .replace(queryParameters: {'member_pk': cfg['memberId']!});
       final res = await http.get(uri, headers: await _headers())
           .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
-    } catch (_) {}
+      AppLogger.info('WF', 'fetchWorkflow ← ${res.statusCode} ${res.body.length}b');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        AppLogger.info('WF', 'fetchWorkflow data: provisioned=${data['provisioned']} wfs=${(data['workflows'] as List?)?.length ?? 0}');
+        return data;
+      }
+      AppLogger.warn('WF', 'fetchWorkflow ← ${res.statusCode} body=${res.body}');
+    } catch (e) {
+      AppLogger.error('WF', 'fetchWorkflow ERR — $e');
+    }
     return null;
   }
 
   static Future<Map<String, dynamic>> provisionWorkflow() async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    AppLogger.info('WF', 'POST /api/workflow/provision [pk=${cfg['memberId']}]');
     try {
       final res = await http.post(
         Uri.parse('${cfg['apiBase']}/api/workflow/provision'),
         headers: await _headers(),
         body: jsonEncode({'member_pk': cfg['memberId']!}),
       ).timeout(const Duration(seconds: 15));
-      return jsonDecode(res.body) as Map<String, dynamic>;
+      AppLogger.info('WF', 'provision ← ${res.statusCode} ${res.body}');
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['ok'] != true) AppLogger.warn('WF', 'provision FAIL — ${data['error']}');
+      return data;
     } catch (e) {
+      AppLogger.error('WF', 'provision ERR — $e');
       return {'ok': false, 'error': '연결 실패: $e'};
     }
   }
@@ -279,14 +329,19 @@ class ApiService {
   static Future<Map<String, dynamic>> modifyWorkflow(String instruction) async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    AppLogger.info('WF', 'POST /api/workflow/modify instruction="${instruction.length > 40 ? instruction.substring(0,40) : instruction}"');
     try {
       final res = await http.post(
         Uri.parse('${cfg['apiBase']}/api/workflow/modify'),
         headers: await _headers(),
         body: jsonEncode({'member_pk': cfg['memberId']!, 'instruction': instruction}),
       ).timeout(const Duration(seconds: 10));
-      return jsonDecode(res.body) as Map<String, dynamic>;
+      AppLogger.info('WF', 'modify ← ${res.statusCode} ${res.body}');
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['ok'] != true) AppLogger.warn('WF', 'modify FAIL — ${data['error']}');
+      return data;
     } catch (e) {
+      AppLogger.error('WF', 'modify ERR — $e');
       return {'ok': false, 'error': '연결 실패: $e'};
     }
   }
@@ -336,20 +391,18 @@ class ApiService {
   }) async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    AppLogger.info('CASE', 'POST /api/case/submit title="$caseTitle" images=${images.length}');
     try {
       final uri = Uri.parse('${cfg['apiBase']}/api/case/submit');
       final req = http.MultipartRequest('POST', uri);
 
-      // 인증 헤더
       final token = (cfg['apiToken'] as String?) ?? '';
       if (token.isNotEmpty) req.headers['Authorization'] = 'Bearer $token';
 
-      // 텍스트 필드
       req.fields['member_pk']   = cfg['memberId']!;
       req.fields['case_title']  = caseTitle;
       req.fields['raw_content'] = rawContent;
 
-      // 이미지 파일들
       for (final file in images) {
         final name = file.path.split('/').last;
         req.files.add(await http.MultipartFile.fromPath(
@@ -359,8 +412,12 @@ class ApiService {
 
       final streamed = await req.send().timeout(const Duration(seconds: 30));
       final body = await streamed.stream.bytesToString();
-      return jsonDecode(body) as Map<String, dynamic>;
+      AppLogger.info('CASE', 'submitCase ← ${streamed.statusCode} $body');
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      if (data['ok'] != true) AppLogger.warn('CASE', 'submitCase FAIL — ${data['error']}');
+      return data;
     } catch (e) {
+      AppLogger.error('CASE', 'submitCase ERR — $e');
       return {'ok': false, 'error': '연결 실패: $e'};
     }
   }
@@ -369,6 +426,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> fetchCases() async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) return [];
+    AppLogger.info('CASE', 'GET /api/case [pk=${cfg['memberId']}]');
     try {
       final uri = Uri.parse('${cfg['apiBase']}/api/case')
           .replace(queryParameters: {'member_pk': cfg['memberId']!});
@@ -376,9 +434,14 @@ class ApiService {
           .timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return List<Map<String, dynamic>>.from(data is List ? data : []);
+        final list = List<Map<String, dynamic>>.from(data is List ? data : []);
+        AppLogger.info('CASE', 'fetchCases ← ${res.statusCode} [${list.length}개]');
+        return list;
       }
-    } catch (_) {}
+      AppLogger.warn('CASE', 'fetchCases ← ${res.statusCode}');
+    } catch (e) {
+      AppLogger.error('CASE', 'fetchCases ERR — $e');
+    }
     return [];
   }
 
@@ -386,16 +449,25 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchOutputs({int page = 1}) async {
     final cfg = await loadConfig();
     if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) {
+      AppLogger.warn('OUT', 'fetchOutputs — 서버/멤버 미설정');
       return {'ok': false, 'items': [], 'total': 0};
     }
+    AppLogger.info('OUT', 'GET /api/outputs page=$page');
     try {
       final uri = Uri.parse('${cfg['apiBase']}/api/outputs').replace(
         queryParameters: {'member_pk': cfg['memberId']!, 'page': '$page'},
       );
       final res = await http.get(uri, headers: await _headers())
           .timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
-    } catch (_) {}
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        AppLogger.info('OUT', 'fetchOutputs ← ${res.statusCode} total=${data['total']} items=${(data['items'] as List?)?.length ?? 0}');
+        return data;
+      }
+      AppLogger.warn('OUT', 'fetchOutputs ← ${res.statusCode}');
+    } catch (e) {
+      AppLogger.error('OUT', 'fetchOutputs ERR — $e');
+    }
     return {'ok': false, 'items': [], 'total': 0};
   }
 }

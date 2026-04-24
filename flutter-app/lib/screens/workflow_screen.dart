@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/app_logger.dart';
 
 class WorkflowScreen extends StatefulWidget {
   const WorkflowScreen({super.key});
@@ -36,16 +37,26 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
   }
 
   Future<void> _load() async {
+    AppLogger.info('WF_UI', '워크플로우 화면 로드 시작');
     setState(() { _loading = true; _modifyResult = null; });
     final data = await ApiService.fetchWorkflow();
-    if (mounted) setState(() { _data = data; _loading = false; });
+    if (mounted) {
+      setState(() { _data = data; _loading = false; });
+      if (data == null) {
+        AppLogger.warn('WF_UI', '워크플로우 데이터 null — 서버 응답 없음');
+      } else {
+        AppLogger.info('WF_UI', '워크플로우 로드 완료: provisioned=${data['provisioned']} data=$data');
+      }
+    }
   }
 
   Future<void> _provision() async {
+    AppLogger.info('WF_UI', '워크플로우 프로비저닝 시작');
     setState(() => _provisioning = true);
     final res = await ApiService.provisionWorkflow();
     if (!mounted) return;
     if (res['ok'] == true) {
+      AppLogger.info('WF_UI', '프로비저닝 성공: ${res['message']}');
       await _load();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -54,6 +65,7 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
         ),
       );
     } else {
+      AppLogger.error('WF_UI', '프로비저닝 실패: ${res['error']}');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('오류: ${res['error'] ?? '알 수 없는 오류'}'), backgroundColor: Colors.red),
       );
@@ -64,9 +76,15 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
   Future<void> _sendModify() async {
     final text = _modifyCtrl.text.trim();
     if (text.isEmpty || _modifying) return;
+    AppLogger.info('WF_UI', '수정 요청: "$text"');
     setState(() { _modifying = true; _modifyResult = null; });
     final res = await ApiService.modifyWorkflow(text);
     if (!mounted) return;
+    if (res['ok'] == true) {
+      AppLogger.info('WF_UI', '수정 성공: ${res['message']}');
+    } else {
+      AppLogger.error('WF_UI', '수정 실패: ${res['error']}');
+    }
     setState(() {
       _modifying = false;
       _modifyResult = res['ok'] == true ? '✅ ${res['message']}' : '❌ ${res['error'] ?? '오류'}';
