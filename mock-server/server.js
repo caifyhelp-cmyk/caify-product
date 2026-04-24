@@ -69,7 +69,7 @@ function saveDb() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(DB_FILE, JSON.stringify(
-      { posts, messages, nextPostId, nextMsgId, publishQueue, nextQueueId }, null, 2));
+      { posts, messages, nextPostId, nextMsgId, publishQueue, nextQueueId, cases, nextCaseId }, null, 2));
   } catch (e) {
     console.warn('[db] 파일 저장 실패:', e.message);
   }
@@ -185,14 +185,31 @@ const DEFAULT_MESSAGES = [
   },
 ];
 
+// 기본 사례 데이터
+const DEFAULT_CASES = [
+  {
+    id: 1,
+    member_pk: 1,
+    case_title: '[샘플] 임플란트 사례 - 65세 환자',
+    raw_content: '65세 여성 환자. 하악 우측 제1대구치 결손 2년. 골밀도 양호. 임플란트 식립 후 3개월 만에 골유착 완료. 최종 보철 장착 후 저작 기능 완전 회복.',
+    ai_status: 'done',
+    ai_title: '65세에도 성공적인 임플란트 — 골유착 3개월 완성 사례',
+    ai_summary: '고령 환자의 임플란트 성공 사례로 골밀도 검사부터 최종 보철까지의 전 과정을 담았습니다.',
+    files: [],
+    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+  },
+];
+
 // 파일에서 복원하거나 기본값 사용
 const savedDb = loadDb();
 let posts        = savedDb?.posts        ?? DEFAULT_POSTS;
 let messages     = savedDb?.messages     ?? DEFAULT_MESSAGES;
 let publishQueue = savedDb?.publishQueue ?? [];
+let cases        = savedDb?.cases        ?? DEFAULT_CASES;
 let nextPostId   = savedDb?.nextPostId   ?? 5;
 let nextMsgId    = savedDb?.nextMsgId    ?? 4;
 let nextQueueId  = savedDb?.nextQueueId  ?? 1;
+let nextCaseId   = savedDb?.nextCaseId   ?? 2;
 
 // ── 인메모리 DB (members는 자격증명이므로 코드에서 관리) ──────────
 // caify_member 테이블 (실제: id=PK/member_pk, member_id=로그인ID)
@@ -1573,8 +1590,166 @@ app.get('/', (req, res) => {
       'POST /api/workflow/modify',
       'GET /api/rank?member_pk=X',
       'POST /api/rank/check',
+      'POST /api/case/submit',
+      'GET /api/case?member_pk=X',
+      'GET /api/outputs?member_pk=X',
     ],
   });
+});
+
+// ════════════════════════════════════════════════════════════════
+// 사례형(Case) 관리
+// caify_case 테이블 미러
+//
+// POST /api/case/submit
+//   Body: { member_pk, case_title, raw_content, images?: [{name, url}] }
+//   → caify_case 저장 + n8n case 워크플로우 트리거
+//   Response: { ok, case_id, message }
+//
+// GET /api/case?member_pk=X
+//   → 내 사례 목록 (caify_case)
+//   Response: [{ id, case_title, raw_content, ai_status, created_at, files }]
+// ════════════════════════════════════════════════════════════════
+
+// caify_case_file (파일 업로드 — mock은 URL 직접 수신)
+// 실서버: multipart/form-data → 파일 저장 후 stored_path 기록
+
+app.post('/api/case/submit', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  if (!isPaid(member)) return res.status(403).json({ ok: false, error: '유료 플랜 전용입니다.' });
+
+  const pk          = parseInt(req.body.member_pk || member.id, 10);
+  const caseTitle   = (req.body.case_title   || '').trim();
+  const rawContent  = (req.body.raw_content  || '').trim();
+  // images: [{ name, url }] — mock은 URL 배열로 수신 (실서버는 multipart 파일)
+  const images      = Array.isArray(req.body.images) ? req.body.images : [];
+
+  if (!caseTitle)  return res.status(422).json({ ok: false, error: '사례명은 필수입니다.' });
+  if (!rawContent) return res.status(422).json({ ok: false, error: '사례 내용은 필수입니다.' });
+
+  const caseItem = {
+    id:          nextCaseId++,
+    member_pk:   pk,
+    case_title:  caseTitle,
+    raw_content: rawContent,
+    ai_status:   'pending',   // n8n 처리 전
+    ai_title:    null,
+    ai_summary:  null,
+    files:       images.map((img, i) => ({
+      id:            i + 1,
+      original_name: img.name || `image_${i + 1}.jpg`,
+      url:           img.url  || '',
+    })),
+    created_at: new Date().toISOString(),
+  };
+
+  cases.push(caseItem);
+  saveDb();
+
+  // n8n case 워크플로우 트리거 (mock: 3초 후 pending→done 시뮬레이션)
+  const caseWf = memberWorkflows[pk]?.workflows?.find(w => w.type === 'case');
+  console.log(` [case/submit] id=${caseItem.id} member=${pk} wf=${caseWf?.workflow_id ?? 'none'}`);
+
+  setTimeout(() => {
+    const c = cases.find(x => x.id === caseItem.id);
+    if (c && c.ai_status === 'pending') {
+      c.ai_status  = 'done';
+      c.ai_title   = `[AI] ${caseTitle}`;
+      c.ai_summary = `${rawContent.substring(0, 60)}... (AI 요약)`;
+      saveDb();
+      // 채팅 알림
+      messages.push({
+        id: nextMsgId++, member_pk: pk,
+        type: 'case.done', is_system: true,
+        text: `✅ 사례형 포스팅이 완성됐습니다!\n\n"${caseTitle}"\n\n산출물 탭에서 확인하세요.`,
+        post_id: null, post_title: null, post_html: null,
+        meta: { case_id: c.id },
+        actions: [{ label: '산출물 보기', action_key: 'view_outputs' }],
+        read: false, created_at: new Date().toISOString(),
+      });
+      nextMsgId++;
+      saveDb();
+      console.log(` [case/done] id=${caseItem.id}`);
+    }
+  }, 3000);
+
+  res.status(201).json({
+    ok:      true,
+    case_id: caseItem.id,
+    message: 'n8n 워크플로우 실행 중입니다. 잠시 후 산출물 탭에서 확인하세요.',
+  });
+});
+
+app.get('/api/case', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const pk = parseInt(req.query.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  const result = cases
+    .filter(c => c.member_pk === pk)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .map(c => ({
+      id:          c.id,
+      case_title:  c.case_title,
+      raw_content: c.raw_content,
+      ai_status:   c.ai_status,
+      ai_title:    c.ai_title,
+      ai_summary:  c.ai_summary,
+      files:       c.files,
+      created_at:  c.created_at,
+    }));
+
+  res.json(result);
+});
+
+// ════════════════════════════════════════════════════════════════
+// 산출물(Outputs) 관리
+// ai_posts 에서 발행 대기/완료 목록 조회
+//
+// GET /api/outputs?member_pk=X&page=1
+//   실서버: ai_posts WHERE status=1 AND DATE(created_at) <= DATE_SUB(CURDATE(), 2 DAY)
+//   Response: { ok, total, page, per_page, items: [...] }
+// ════════════════════════════════════════════════════════════════
+
+app.get('/api/outputs', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const pk      = parseInt(req.query.member_pk || member.id, 10);
+  const page    = Math.max(1, parseInt(req.query.page || '1', 10));
+  const perPage = 12;
+
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  // 실서버와 동일: status=1, 2일 이상 지난 것만 (관리자는 전체)
+  const twoDaysAgo = new Date(Date.now() - 2 * 86400000);
+  const filtered = posts.filter(p => {
+    if (isAdmin(member)) return true;
+    return p.customer_id === pk &&
+           p.status === 1 &&
+           new Date(p.created_at) <= twoDaysAgo;
+  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const total = filtered.length;
+  const items = filtered.slice((page - 1) * perPage, page * perPage).map(p => ({
+    id:           p.id,
+    title:        p.title,
+    subject:      p.subject || null,
+    posting_date: p.posting_date,
+    created_at:   p.created_at,
+    // 썸네일: naver_html에서 첫 번째 img src 추출
+    thumbnail:    (() => {
+      const m = (p.naver_html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+      return m ? m[1] : null;
+    })(),
+  }));
+
+  res.json({ ok: true, total, page, per_page: perPage, items });
 });
 
 // ── 서버 시작 ────────────────────────────────────────────────────
