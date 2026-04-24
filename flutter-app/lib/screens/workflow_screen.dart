@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import 'case_submit_sheet.dart';
 
 class WorkflowScreen extends StatefulWidget {
   const WorkflowScreen({super.key});
@@ -307,6 +308,7 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     final type   = wf['type'] as String? ?? '';
     final active = wf['active'] == true;
     final label  = _typeLabels[type] ?? type;
+    final isCase = type == 'case';
 
     return Card(
       shape: RoundedRectangleBorder(
@@ -316,33 +318,46 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
           width: active ? 1.5 : 1,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              active ? Icons.check_circle : Icons.pause_circle_outline,
-              color: active ? const Color(0xFF03C75A) : Colors.grey,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  Text(
-                    active ? '활성' : '비활성',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: active ? const Color(0xFF03C75A) : Colors.grey,
-                    ),
-                  ),
-                ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: isCase && active
+            ? () async {
+                AppLogger.info('WF_UI', '케이스형 카드 탭 → 사례 제출 시트 열기');
+                await showCaseSubmitSheet(context);
+              }
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                active ? Icons.check_circle : Icons.pause_circle_outline,
+                color: active ? const Color(0xFF03C75A) : Colors.grey,
+                size: 18,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text(
+                      active
+                          ? (isCase ? '탭해서 사례 제출' : '활성')
+                          : '비활성',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: active ? const Color(0xFF03C75A) : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isCase && active)
+                const Icon(Icons.edit_note, size: 16, color: Color(0xFF03C75A)),
+            ],
+          ),
         ),
       ),
     );
