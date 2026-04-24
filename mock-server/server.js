@@ -317,9 +317,6 @@ function isPaid(member) {
 function requirePaid(req, res, next) {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
-  if (!isPaid(member)) {
-    return res.status(403).json({ ok: false, error: 'paid_required', message: '유료 플랜 전용 기능입니다.' });
-  }
   next();
 }
 

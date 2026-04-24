@@ -49,7 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _hasWorkflows = me['has_workflows'] as bool?     ?? _hasWorkflows;
       });
     }
-    if (_tier < 1) return;
+    if (_tier < 1) return; // 무료는 포스팅 모드 조회 생략
     final mode = await ApiService.fetchPostingMode();
     if (!mounted || mode == null) return;
     setState(() {

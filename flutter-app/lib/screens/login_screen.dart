@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/update_service.dart';
 import 'home_screen.dart';
-import 'locked_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -54,12 +53,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (result['ok'] == true) {
-      final tier = (result['tier'] as num?)?.toInt() ?? 0;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => tier >= 1 ? const HomeScreen() : const LockedScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } else {
       setState(() {

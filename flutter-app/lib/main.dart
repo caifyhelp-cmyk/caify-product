@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/locked_screen.dart';
 import 'services/api_service.dart';
 import 'services/update_service.dart';
 
@@ -52,14 +51,10 @@ class _SplashRouterState extends State<_SplashRouter> {
           context, MaterialPageRoute(builder: (_) => const LoginScreen()));
       return;
     }
-    final cfg = await ApiService.loadConfig();
-    final tier = (cfg['tier'] as int?) ?? 0;
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => tier >= 1 ? const HomeScreen() : const LockedScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
   }
 
