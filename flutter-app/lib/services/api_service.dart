@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
@@ -324,5 +325,77 @@ class ApiService {
     } catch (e) {
       return {'ok': false, 'error': '연결 실패: $e'};
     }
+  }
+
+  // ── 사례(Case) 제출 ──────────────────────────────────────────
+  /// 이미지 파일 리스트와 함께 multipart/form-data로 전송
+  static Future<Map<String, dynamic>> submitCase({
+    required String caseTitle,
+    required String rawContent,
+    List<File> images = const [],
+  }) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/case/submit');
+      final req = http.MultipartRequest('POST', uri);
+
+      // 인증 헤더
+      final token = (cfg['apiToken'] as String?) ?? '';
+      if (token.isNotEmpty) req.headers['Authorization'] = 'Bearer $token';
+
+      // 텍스트 필드
+      req.fields['member_pk']   = cfg['memberId']!;
+      req.fields['case_title']  = caseTitle;
+      req.fields['raw_content'] = rawContent;
+
+      // 이미지 파일들
+      for (final file in images) {
+        final name = file.path.split('/').last;
+        req.files.add(await http.MultipartFile.fromPath(
+          'case_images', file.path, filename: name,
+        ));
+      }
+
+      final streamed = await req.send().timeout(const Duration(seconds: 30));
+      final body = await streamed.stream.bytesToString();
+      return jsonDecode(body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': '연결 실패: $e'};
+    }
+  }
+
+  // ── 내 사례 목록 ─────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> fetchCases() async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) return [];
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/case')
+          .replace(queryParameters: {'member_pk': cfg['memberId']!});
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return List<Map<String, dynamic>>.from(data is List ? data : []);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // ── 산출물(Outputs) 목록 ─────────────────────────────────────
+  static Future<Map<String, dynamic>> fetchOutputs({int page = 1}) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) {
+      return {'ok': false, 'items': [], 'total': 0};
+    }
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/outputs').replace(
+        queryParameters: {'member_pk': cfg['memberId']!, 'page': '$page'},
+      );
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {}
+    return {'ok': false, 'items': [], 'total': 0};
   }
 }

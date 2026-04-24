@@ -1,7 +1,7 @@
 name: caify_flutter
 description: Caify 블로그 자동화 앱
 publish_to: 'none'
-version: 1.5.8+59
+version: 1.6.0+60
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -17,6 +17,8 @@ dependencies:
   package_info_plus: ^8.0.0            # 현재 앱 버전 조회
   path_provider: ^2.1.0                # 임시 파일 경로
   open_file: ^3.3.2                    # APK 설치 실행
+  image_picker: ^1.1.0                 # 갤러리/카메라 이미지 선택
+  cached_network_image: ^3.3.0         # 썸네일 캐싱
 
 dev_dependencies:
   flutter_test:

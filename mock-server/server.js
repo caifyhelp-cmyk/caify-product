@@ -30,6 +30,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const multer  = require('multer');
 const n8nCfg = require('./n8n.config');
 
 const app = express();
@@ -37,6 +38,9 @@ const PORT = process.env.PORT || 3030;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// multer: case_images 파일 업로드 처리 (메모리에 보관, 파일 저장 안 함)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── CORS (Flutter/Electron 에서 접근 가능하도록) ────────────────
 app.use((req, res, next) => {
@@ -1614,7 +1618,7 @@ app.get('/', (req, res) => {
 // caify_case_file (파일 업로드 — mock은 URL 직접 수신)
 // 실서버: multipart/form-data → 파일 저장 후 stored_path 기록
 
-app.post('/api/case/submit', (req, res) => {
+app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
   if (!isPaid(member)) return res.status(403).json({ ok: false, error: '유료 플랜 전용입니다.' });
@@ -1622,8 +1626,9 @@ app.post('/api/case/submit', (req, res) => {
   const pk          = parseInt(req.body.member_pk || member.id, 10);
   const caseTitle   = (req.body.case_title   || '').trim();
   const rawContent  = (req.body.raw_content  || '').trim();
-  // images: [{ name, url }] — mock은 URL 배열로 수신 (실서버는 multipart 파일)
-  const images      = Array.isArray(req.body.images) ? req.body.images : [];
+  // multipart 파일들 (실서버 동일 구조)
+  const uploadedFiles = req.files || [];
+  const images = uploadedFiles.map((f, i) => ({ name: f.originalname, url: '' }));
 
   if (!caseTitle)  return res.status(422).json({ ok: false, error: '사례명은 필수입니다.' });
   if (!rawContent) return res.status(422).json({ ok: false, error: '사례 내용은 필수입니다.' });
@@ -1740,6 +1745,10 @@ app.get('/api/outputs', (req, res) => {
     id:           p.id,
     title:        p.title,
     subject:      p.subject || null,
+    html:         p.html         || '',
+    naver_html:   p.naver_html   || '',
+    tags:         p.tags         || [],
+    status:       p.posting_date ? 'published' : 'ready',
     posting_date: p.posting_date,
     created_at:   p.created_at,
     // 썸네일: naver_html에서 첫 번째 img src 추출

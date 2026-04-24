@@ -4,6 +4,8 @@ import '../models/post.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
 import 'publish_screen.dart';
+import 'outputs_tab.dart';
+import 'case_submit_sheet.dart';
 
 class PostListScreen extends StatefulWidget {
   const PostListScreen({super.key});
@@ -21,10 +23,13 @@ class _PostListScreenState extends State<PostListScreen>
 
   Timer? _pollTimer;
 
+  static const _green = Color(0xFF03C75A);
+
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl.addListener(() => setState(() {})); // FAB 갱신용
     _load();
     _pollTimer = Timer.periodic(const Duration(minutes: 5), (_) => _load());
   }
@@ -84,13 +89,35 @@ class _PostListScreenState extends State<PostListScreen>
     _load();
   }
 
+  Future<void> _openCaseSubmit() async {
+    final submitted = await showCaseSubmitSheet(context);
+    if (submitted == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('사례가 전달됐습니다. 산출물 탭에서 확인하세요.'),
+            ],
+          ),
+          backgroundColor: _green,
+          duration: Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final onOutputsTab = _tabCtrl.index == 2;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         title: const Text('Caify', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF03C75A),
+        backgroundColor: _green,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -109,16 +136,27 @@ class _PostListScreenState extends State<PostListScreen>
           tabs: [
             Tab(text: '발행 대기 (${_readyPosts.length})'),
             Tab(text: '발행 완료 (${_publishedPosts.length})'),
+            const Tab(text: '산출물'),
           ],
         ),
       ),
+      floatingActionButton: onOutputsTab
+          ? FloatingActionButton.extended(
+              onPressed: _openCaseSubmit,
+              backgroundColor: _green,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text('사례 제출', style: TextStyle(fontWeight: FontWeight.w600)),
+            )
+          : null,
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF03C75A)))
+          ? const Center(child: CircularProgressIndicator(color: _green))
           : TabBarView(
               controller: _tabCtrl,
               children: [
                 _buildList(_readyPosts, showPublishBtn: true),
                 _buildList(_publishedPosts, showPublishBtn: false),
+                const OutputsTab(),
               ],
             ),
     );
@@ -140,7 +178,7 @@ class _PostListScreenState extends State<PostListScreen>
 
     return RefreshIndicator(
       onRefresh: _load,
-      color: const Color(0xFF03C75A),
+      color: _green,
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: posts.length,
@@ -171,7 +209,7 @@ class _PostListScreenState extends State<PostListScreen>
                   icon: const Icon(Icons.edit_outlined, size: 16),
                   label: const Text('에디터에서 발행하기'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF03C75A),
+                    backgroundColor: _green,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
@@ -184,10 +222,10 @@ class _PostListScreenState extends State<PostListScreen>
               const SizedBox(height: 8),
               const Row(
                 children: [
-                  Icon(Icons.check_circle, color: Color(0xFF03C75A), size: 14),
+                  Icon(Icons.check_circle, color: _green, size: 14),
                   SizedBox(width: 4),
                   Text('발행 완료',
-                      style: TextStyle(color: Color(0xFF03C75A), fontSize: 12)),
+                      style: TextStyle(color: _green, fontSize: 12)),
                 ],
               ),
             ],

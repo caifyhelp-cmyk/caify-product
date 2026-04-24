@@ -25,8 +25,8 @@ class Post {
     }
     return Post(
       id:        j['id'] as int,
-      title:     j['title'] as String,
-      html:      j['html'] as String,
+      title:     j['title'] as String? ?? '',
+      html:      j['html'] as String? ?? '',
       status:    j['status']?.toString() ?? '',
       createdAt: j['created_at'] ?? '',
       tags:      tags,
