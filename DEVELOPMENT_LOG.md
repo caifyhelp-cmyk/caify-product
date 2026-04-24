@@ -37,17 +37,77 @@ caify-product/                         ← GitHub: caifyhelp-cmyk/caify-product
 
 ---
 
-## 현재 버전: v1.4.7
+## 현재 버전: v1.5.7
 
 ### 버전 히스토리 요약
 | 버전 | 주요 변경 |
 |------|-----------|
+| v1.5.7 | 포스팅 모드 3가지 확정 (정보성/믹스/사례형), 사례형 큐에서 제거 |
+| v1.5.6 | n8n 프로비저닝 + 무료 유저(tier=0) 차단 + 포스팅 모드 시스템 |
+| v1.5.5 | useHybridComposition WebView 계층 수정 |
+| v1.5.4 | dispatchPaste findFocus fallback 추가 |
+| v1.5.3 | dispatchKeyEvent Ctrl+V 이미지 trusted paste |
 | v1.4.7 | FileProvider cache-path 추가 (이미지 클립보드 ERR 수정) |
 | v1.4.6 | PostingBridge-style 이미지 클립보드 업로드 구현 |
 | v1.4.5 | iframe script context 수정, SE3 paragraph[] 본문 주입 |
-| v1.4.0~1.4.4 | SE3 _documentService/setDocumentData 본문 주입 시도 |
 | v1.3.x | _papyrus paste, _tagService API 추가 |
 | v1.2.x | 인앱 로그 뷰어, 어댑티브 아이콘, SE3 재작성 |
+
+---
+
+## 구현 완료 기능 (v1.5.7 기준)
+
+| 화면 | 기능 |
+|------|------|
+| 로그인 | 서버 URL·ID·비밀번호 로그인, 자동 로그인 |
+| 잠금 화면 | tier=0 무료 유저 차단, caifyhelp@gmail.com 안내, 로그아웃 |
+| 채팅 | 15초 폴링, 시스템 메시지 + 액션버튼, 자유 입력 → 워크플로우 커스터마이징 |
+| 포스팅 목록 | status=ready 포스팅 조회 |
+| 포스팅 미리보기 | HTML 렌더링 |
+| 발행(SE3 WebView) | 제목·본문·이미지·태그 자동 주입 → 발행완료/실패 API 통보 |
+| 설정 | 서버주소·회원ID·토큰 저장, 내 플랜 뱃지(유료/무료), 포스팅 모드 카드, 개발 로그 뷰어 |
+| 자동 업데이트 | GitHub Releases 감지 → APK 다운로드·설치 |
+
+### 미구현 (다음 작업)
+- 사례형(case) 수동 제출 화면 — 고객이 내용+이미지 입력 → case 워크플로우 실행
+- 산출물 관리 화면 — case 결과물 목록 조회
+
+---
+
+## n8n 연동
+
+### 인스턴스
+- URL: `https://n8n.caify.ai` (자체 호스팅)
+- API Key: `mock-server/n8n.config.js`에 저장 (git 추적)
+
+### 워크플로우 구조
+- **Queue Worker** `bUXjHTh7xEecPuOr` — 5분마다 실행, `caify_publish_queue`에서 `publish_date=오늘` 픽업
+- **서브워크플로우 (복제 템플릿)**:
+  | 키 | 워크플로우 ID |
+  |----|--------------|
+  | info  | `DvvwnamBcqnqVgCz` |
+  | promo | `zUhFnjJvA7Fuz6UG` |
+  | plusA | `gDW5xp9brX889Qmv` |
+  | case  | `vUlrwTSj0b3TcIKg` |
+- 유료 고객 등록 시 `POST /member/provision` → 4개 워크플로우 복제 (shared credentials)
+- 서브워크플로우 마지막: `POST https://caify.ai/api` 로 생성된 포스팅 저장 (HTTP Request 노드)
+  - ⚠️ `html` 필드가 하드코딩 `"11"` → 실제 생성 HTML 필드명으로 수정 필요
+  - ⚠️ HTTP Request → return 노드 연결 확인 필요
+
+### 포스팅 모드 (2026-04-24 확정)
+
+| 모드 키 | 레이블 | 자동 발행 (caify_publish_queue) | 사례형(수동) |
+|---------|--------|--------------------------------|-------------|
+| `intensive` | 정보성 | info+promo+plusA 평일 3개/일 (주 15개) | 없음 |
+| `mixed` | 믹스 | promo→info→plusA 순환 평일 1개/일 (주 5개) | 주 3회 |
+| `case` | 사례형 | 없음 | 주 5회 |
+
+- 사례형은 **항상 수동** — 고객이 내용+이미지 입력 → case 워크플로우 → 산출물 관리
+- 모드 변경은 채팅에서 요청 → **다음 주 월요일** 적용 (ISO week 기반)
+
+### 미확인 사항
+- `caify_publish_queue` 테이블이 실 MySQL에 존재하는지
+- info/promo/plusA 서브워크플로우의 마지막 HTTP Request 노드가 정상 동작하는지
 
 ---
 
@@ -60,7 +120,7 @@ caify-product/                         ← GitHub: caifyhelp-cmyk/caify-product
 | 로컬 에뮬레이터 | `http://10.0.2.2:3030` |
 | **실서버 (caify.ai)** | `https://caify.ai` (전환 예정) |
 
-- 서버 주소 변경: 앱 로고 5번 탭 → 숨겨진 설정창
+- 서버 주소 변경: 앱 설정 화면에서 직접 수정 가능
 
 ### 네이버 에디터 설정
 - **UA**: 데스크톱 Chrome 120 (모바일 UA → 네이버 "일시적 오류" 발생)
