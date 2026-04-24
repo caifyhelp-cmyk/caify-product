@@ -1,0 +1,86 @@
+
+.main__policy{
+    padding: 100px 0;
+    max-width: 1400px;
+    margin: 0 auto;
+    font-family: 'Pretendard';
+    font-weight: 400;
+
+    .policy__tab{
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+
+        li{
+            flex: 1;
+            background: #eee;
+            border-radius: 3rem;
+            text-align: center;
+            height: 2.8125rem;
+            
+
+            a{
+                display: block;
+                width: 100%;
+                height: 100%;
+                align-content: center;
+            }
+            &.active{
+                background-image: linear-gradient(120deg, #111827 50%, #1B4086, #1A7F9D);
+                a{
+                    color: #fff;
+                }
+            }
+        }
+    }
+}
+.scroll__terms{
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 1rem ;
+}
+.policy__title {
+    text-align: center;
+    border-bottom: 1px solid #E0E0E0;
+    color: #000;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+
+.privacy{
+    line-height: 1.4;
+    word-break: keep-all;
+
+    h4{
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        margin-top: 2rem;
+    }
+
+    .policyrules__item{
+        margin-bottom: 1rem;
+        li{
+            margin-bottom: 0.5rem;
+        }
+
+        ol{
+            list-style: decimal;
+            padding-left: 2.5rem;
+            margin-top: 0.5rem;
+        }
+    }
+
+    .policyrules__ol{
+        list-style: decimal;
+        padding-left: 1.5rem;
+
+        li{
+            margin-bottom: 0.5rem;
+        }
+    }
+    
+}

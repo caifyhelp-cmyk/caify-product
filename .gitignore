@@ -30,3 +30,10 @@ Thumbs.db
 
 # Mock server DB (파일 영속화 데이터)
 mock-server/data/
+
+# PHP 서버 업로드 파일 (실제 데이터 제외)
+php-server/upload/
+php-server/env/
+php-server/upload/
+php-server/api/env/
+php-server/chat_log*.xlsx

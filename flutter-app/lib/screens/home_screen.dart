@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'chat_screen.dart';
 import 'post_list_screen.dart';
+import 'workflow_screen.dart';
+import 'rank_screen.dart';
 import 'settings_screen.dart';
 import '../services/update_service.dart';
 
@@ -26,6 +28,8 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _pages = <Widget>[
     ChatScreen(),
     PostListScreen(),
+    WorkflowScreen(),
+    RankScreen(),
     SettingsScreen(),
   ];
 
@@ -51,6 +55,16 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.article_outlined),
             activeIcon: Icon(Icons.article),
             label: '포스팅',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_tree_outlined),
+            activeIcon: Icon(Icons.account_tree),
+            label: '워크플로우',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart_outlined),
+            activeIcon: Icon(Icons.bar_chart),
+            label: '순위',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),

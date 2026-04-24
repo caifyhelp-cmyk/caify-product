@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import 'naver_link_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,17 +16,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _tokenCtrl    = TextEditingController();
   String _testResult  = '';
   bool _testing       = false;
-  int _tier              = 0;
-  bool _hasWorkflows     = false;
-  String _postingMode    = '';
-  String _postingModeNext = '';
-  String _modeSwitchWeek = '';
+  String? _blogId;
+  bool _blogIdLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadConfig();
-    _refreshPlan();
   }
 
   Future<void> _loadConfig() async {
@@ -33,30 +30,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiBaseCtrl.text  = cfg['apiBase']  ?? '';
     _memberIdCtrl.text = cfg['memberId'] ?? '';
     _tokenCtrl.text    = cfg['apiToken'] ?? '';
-    if (mounted) {
-      setState(() {
-        _tier         = (cfg['tier'] as int?)          ?? 0;
-        _hasWorkflows = (cfg['hasWorkflows'] as bool?) ?? false;
-      });
-    }
+    _loadBlogId();
   }
 
-  Future<void> _refreshPlan() async {
-    final me = await ApiService.fetchMe();
-    if (mounted && me != null) {
-      setState(() {
-        _tier         = (me['tier'] as num?)?.toInt()   ?? _tier;
-        _hasWorkflows = me['has_workflows'] as bool?     ?? _hasWorkflows;
-      });
-    }
-    if (_tier < 1) return; // 무료는 포스팅 모드 조회 생략
-    final mode = await ApiService.fetchPostingMode();
-    if (!mounted || mode == null) return;
-    setState(() {
-      _postingMode     = mode['posting_mode']      as String? ?? '';
-      _postingModeNext = mode['posting_mode_next'] as String? ?? '';
-      _modeSwitchWeek  = mode['mode_switch_week']  as String? ?? '';
-    });
+  Future<void> _loadBlogId() async {
+    setState(() => _blogIdLoading = true);
+    final id = await ApiService.fetchNaverBlogId();
+    if (mounted) setState(() { _blogId = id; _blogIdLoading = false; });
   }
 
   @override
@@ -81,20 +61,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _sectionTitle('내 플랜'),
-            _planCard(),
-            if (_tier >= 1 && _postingMode.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _postingModeCard(),
-            ],
+            // ── 네이버 블로그 연동 ──────────────────────────────────
+            _sectionTitle('네이버 블로그 연동'),
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF03C75A).withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.person, color: Color(0xFF03C75A), size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _blogIdLoading
+                              ? const Text('로딩 중...', style: TextStyle(color: Colors.grey))
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _blogId != null && _blogId!.isNotEmpty
+                                          ? _blogId!
+                                          : '연동된 계정 없음',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: _blogId != null && _blogId!.isNotEmpty
+                                            ? Colors.black87
+                                            : Colors.grey,
+                                      ),
+                                    ),
+                                    if (_blogId != null && _blogId!.isNotEmpty)
+                                      Text(
+                                        'blog.naver.com/$_blogId',
+                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                      ),
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _openNaverLink,
+                        icon: const Icon(Icons.swap_horiz, size: 16),
+                        label: Text(
+                          _blogId != null && _blogId!.isNotEmpty ? '블로그 연동 변경' : '블로그 연동하기',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF03C75A),
+                          side: const BorderSide(color: Color(0xFF03C75A)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             const SizedBox(height: 24),
             const Divider(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+
+            // ── 서버 연결 ───────────────────────────────────────────
             _sectionTitle('서버 연결'),
-            _field('API 주소', _apiBaseCtrl, 'http://localhost:4000'),
+            _field('API 주소', _apiBaseCtrl, 'http://localhost:3030'),
             _field('회원 ID (member_pk)', _memberIdCtrl, '123'),
-            _field('API 토큰 (없으면 비워두세요)', _tokenCtrl, '',
-                obscure: true),
+            _field('API 토큰 (없으면 비워두세요)', _tokenCtrl, '', obscure: true),
             const SizedBox(height: 24),
             Row(
               children: [
@@ -105,8 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: const Color(0xFF03C75A),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     child: const Text('저장', style: TextStyle(fontSize: 16)),
                   ),
@@ -117,8 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: _testing ? null : _testConnection,
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     child: _testing
                         ? const SizedBox(
@@ -151,9 +195,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ],
+
             const SizedBox(height: 32),
             const Divider(),
             const SizedBox(height: 16),
+
+            // ── 개발 로그 ───────────────────────────────────────────
             _sectionTitle('개발 로그'),
             Row(
               children: [
@@ -166,8 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       backgroundColor: Colors.black87,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ),
@@ -188,10 +234,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _openNaverLink() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NaverLinkScreen(currentBlogId: _blogId),
+      ),
+    );
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() => _blogIdLoading = true);
+      await ApiService.saveNaverBlogId(result);
+      setState(() { _blogId = result; _blogIdLoading = false; });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('블로그 연동이 완료됐습니다: $result'),
+          backgroundColor: const Color(0xFF03C75A),
+        ),
+      );
+    }
   }
 
   void _showLogViewer(BuildContext context) {
@@ -210,22 +277,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           child: Column(
             children: [
-              // 핸들
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 10),
                 width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
               ),
-              // 헤더
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    const Text('발행 로그', style: TextStyle(
-                        color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text('발행 로그',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                     const Spacer(),
                     TextButton.icon(
                       onPressed: () async {
@@ -247,7 +309,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const Divider(color: Colors.white12),
-              // 로그 목록
               Expanded(
                 child: AppLogger.entries.isEmpty
                     ? const Center(
@@ -275,10 +336,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 2),
                             child: Text(t,
                                 style: TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontSize: 11,
-                                    color: color,
-                                    height: 1.4)),
+                                    fontFamily: 'monospace', fontSize: 11,
+                                    color: color, height: 1.4)),
                           );
                         },
                       ),
@@ -290,148 +349,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _planCard() {
-    final isPaid = _tier == 1;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isPaid
-            ? const Color(0xFFE8F5E9)
-            : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isPaid
-              ? const Color(0xFF03C75A)
-              : Colors.grey.shade300,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isPaid ? Icons.workspace_premium : Icons.lock_outline,
-            color: isPaid ? const Color(0xFF03C75A) : Colors.grey,
-            size: 28,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isPaid ? '유료 플랜' : '무료 플랜',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: isPaid ? const Color(0xFF1B5E20) : Colors.black54,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isPaid
-                      ? _hasWorkflows
-                          ? 'AI 워크플로우 활성화됨 — 채팅으로 자유롭게 커스터마이징하세요'
-                          : 'AI 워크플로우 준비 중입니다'
-                      : '채팅 커스터마이징은 유료 플랜 전용입니다',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isPaid ? const Color(0xFF2E7D32) : Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _postingModeCard() {
-    final modeLabels = {
-      'intensive': '정보성',
-      'mixed':     '믹스',
-      'case':      '사례형',
-    };
-    final modeDescs = {
-      'intensive': 'info+promo+plusA 평일 매일 3개 (주 15개)',
-      'mixed':     '정보성 1개/일 순환 (주 5개) + 사례형 주 3회',
-      'case':      '사례형 주 5회 (자동 발행 없음)',
-    };
-    final curLabel  = modeLabels[_postingMode]  ?? _postingMode;
-    final nextLabel = modeLabels[_postingModeNext] ?? '';
-    final hasPending = _postingModeNext.isNotEmpty;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04),
-              blurRadius: 4, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.calendar_month_outlined,
-                  size: 18, color: Color(0xFF03C75A)),
-              const SizedBox(width: 8),
-              const Text('포스팅 모드',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F5E9),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(curLabel,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF1B5E20),
-                        fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(modeDescs[_postingMode] ?? '',
-              style: const TextStyle(fontSize: 12, color: Colors.black54)),
-          if (hasPending) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF8E1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '다음 주($_modeSwitchWeek)부터 [$nextLabel]으로 전환 예정',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF795548)),
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          const Text('모드를 바꾸려면 채팅에서 말씀해 주세요.',
-              style: TextStyle(fontSize: 11, color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-
   Widget _sectionTitle(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Text(text,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
       );
 
-  Widget _field(String label, TextEditingController ctrl, String hint,
-      {bool obscure = false}) {
+  Widget _field(String label, TextEditingController ctrl, String hint, {bool obscure = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -445,8 +369,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: InputDecoration(
               hintText: hint,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
         ],
@@ -472,9 +395,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() { _testing = true; _testResult = ''; });
     try {
       final posts = await ApiService.fetchPosts();
-      setState(() {
-        _testResult = '✅ 연결 성공 — 포스팅 ${posts.length}개 조회됨';
-      });
+      setState(() { _testResult = '✅ 연결 성공 — 포스팅 ${posts.length}개 조회됨'; });
     } catch (e) {
       setState(() { _testResult = '❌ 연결 실패: $e'; });
     } finally {

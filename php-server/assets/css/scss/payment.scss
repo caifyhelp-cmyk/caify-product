@@ -1,0 +1,386 @@
+@import "variables"; 
+
+
+    
+    
+//*****************
+// payment 공통 start ↓↓↓   
+//*****************
+
+.payment{
+    background: url('/images/common/dot_bot_bg.png') no-repeat 0% 50% / cover,
+    linear-gradient(to left top, #22D3EE, #2561E7 15%, #111827 60%);
+
+    .payment__contents-title{
+        .title-main{
+            color: var(--caify-white);
+            margin: 1rem 0 var(--size-50px);
+        }
+    }
+
+            
+    .payment__aside{
+        background-color: var(--caify-black); 
+        
+        .caify-glass--visual{
+            opacity: 0.1;
+            width: 45rem;
+        }
+    }
+
+    .payment__contents{
+        width: 60vw;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: var(--header_h) 0;
+        
+        .payment__contents-inner{
+            
+            .payment__contents-card{
+                background-color: var(--caify-white);
+                border-radius: var(--size-30px);
+                box-shadow: 0 var(--size-10px) var(--size-25px) rgba(0, 0, 0, 0.25);
+                
+            }
+        }
+    }
+}
+    
+
+//*****************
+// payment 공통 ↑↑↑ end 
+//*****************
+    
+
+
+
+
+
+//*****************
+// payment--checkout 공통 start ↓↓↓
+//*****************
+
+    .payment--checkout{
+
+        .payment__box-wrap{
+            padding: 0.5rem var(--size-10px) 1rem;
+            border-bottom: 1px solid var(--caify-blue-02);
+        }
+
+        .payment__box-title{
+            font-size: var(--size-18px);
+            font-weight: 600;
+        }
+
+        .payment__box{
+            border: 1px solid var(--caify-blue-02);
+            border-radius: var(--size-10px);
+        }
+
+        .form-title{
+            font-weight: 500;
+        }
+    }
+
+//*****************
+// payment--checkout 공통 ↑↑↑ end 
+//*****************
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//*************************************************************
+// payment--checkout
+//
+// start ↓↓↓
+//*************************************************************
+
+
+.payment--checkout{
+    .payment__contents{
+        .payment__contents-inner{
+            .payment__contents-card{
+                
+                .payment__subscription-order{
+                    // .payment__accordion--trigger{
+                    //     cursor: default;
+                    // }
+                    
+                    .payment__subscription-plan{
+
+                        .payment__plan-name{
+                            font-size: var(--size-18px);
+                        }
+                        .payment__plan-info{
+                            line-height: 1.5;
+                            margin: var(--size-10px) 0 1rem;
+                        }
+                        
+                        .payment__total{
+                            padding-top: 1rem;
+                            border-top: 1px solid var(--caify-blue-02);
+
+                            .payment__total-label{
+                                font-size: var(--size-18px);
+                                font-weight: 500;
+                            }
+                            .payment__total-price-wrap{
+                                .payment__total-note{
+                                    color: var(--caify-gray-03);
+                                }
+                                .payment__total-price{
+                                    color: var(--caify-primary);
+                                    font-size: var(--size-24px);
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+                }
+                .payment__agree{
+                    .payment__agree-header{
+                        
+                        .payment__agree-label{
+                            margin-left: 0.5rem;
+                            
+                        }
+                    }
+                }
+                
+                .payment__method{
+                    
+                    .payment__method-options{
+                        gap: 1rem;
+
+                        .payment__method-label{
+                    
+                            // 커스텀 라디오 버튼
+                            &::before {
+                                content: '';
+                                display: block;
+                                width: 20px;
+                                height: 20px;
+                                border: 1.85px solid var(--caify-gray-01);
+                                border-radius: 50%;
+                                transition: border-color 0.2s;
+                                flex-shrink: 0;
+                            }
+                    
+                            &:has(input:checked)::before {
+                                border-color: #2563EB; 
+                                background: radial-gradient(circle, #2563EB 40%, transparent 45%);
+                            }
+                            .payment__method-input{
+                                position: absolute; // 기본 라디오 숨김
+                                opacity: 0;
+                                width: 0;
+                                height: 0; 
+                            }
+                        }
+                    }                        
+                }
+
+                .email-form{
+                
+                    .form-title{
+                        white-space: nowrap;     
+                    }
+                
+                    .email-form__big-wrap{
+                
+                        .email-form__input-wrap{
+                            gap: 0.5rem;
+                
+                            .email-form__input{
+                                background-color: var(--caify-blue-01);
+                                border-radius: var(--size-5px);
+                                padding: 1rem var(--size-10px);
+                                box-sizing: border-box;
+                                border: 1px solid transparent;
+                                font-size: 0.9rem;
+                                font-family: 'Pretendard';
+                                font-weight: 400;
+                                color: var(--caify-black);
+                
+                                &::placeholder{
+                                    color: var(--caify-gray-03);
+                                }
+                                &:focus{
+                                    outline: none !important;
+                                }
+                            }
+                
+                            .email-form__at{
+                                flex-shrink: 0;
+                                color: var(--caify-black);
+                                font-weight: 500;
+                            }
+                
+                            .email-form__select-wrap{
+                                position: relative;
+                                display: block;
+                                flex: 1 1 40%;
+
+                                &::after{
+                                    content: '';
+                                    position: absolute;
+                                    right: 18px;
+                                    top: 50%;
+                                    transform: translateY(-50%);
+                                    width: 16px;
+                                    height: 16px;
+                                    background-image: url(../../images/common/arrow_line_btn_727272.png);
+                                    background-repeat: no-repeat;
+                                    background-size: contain;
+                                    pointer-events: none;
+                                }
+                
+                                select{
+                                    width: 100%;
+                                    background-color: var(--caify-blue-01);
+                                    background-image: url(../images/common/arrow_line_btn_727272.png);
+                                    background-repeat: no-repeat;
+                                    background-position: right 1rem center;
+                                    border-radius: var(--size-5px);
+                                    padding: 1.25rem 2.5rem 1.25rem 1.25rem;
+                                    box-sizing: border-box;
+                                    border: 1px solid transparent;
+                                    color: var(--color-gray-400);
+                                    font-size: 0.9rem;
+                                    font-family: 'Pretendard';
+                                    font-weight: 400;
+                                    -webkit-appearance: none;
+                                    -moz-appearance: none;
+                                    appearance: none;
+                                    cursor: pointer;
+                
+                                    &:focus{
+                                        outline: none !important;
+                                    }
+                                    option{
+                                        color: var(--caify-black);
+                                        font-weight: 300;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        .email-form__notice{
+                            margin-top: 0.5rem;
+                            padding-left: 0.25rem;
+                            font-size: 0.875rem;
+                            color: var(--caify-gray-04);
+
+                            &.email-form__error{
+                                color: var(--color-error);
+                            }
+                        }
+                    }
+                }
+
+                .payment__submit{
+                    margin: 1rem 0;
+                    
+                    .payment__all-agree-text{
+                        font-weight: 500;
+                        font-size: 1rem;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+//*************************************************************
+// payment--checkout
+//
+// end ↑↑↑
+//*************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//*************************************************************
+// payment--complete
+//
+// start ↓↓↓
+//*************************************************************
+
+
+
+.payment--complete{
+    
+    .payment__contents{ 
+            
+        .payment__contents-inner{
+
+            .payment__contents-card{
+                
+                .payment--complete__contents{
+                    border-top: 1px solid var(--caify-blue-02);
+                    
+                    .payment--complete__plan-name{
+                        font-weight: 500;
+                    }
+
+                    .payment--complete__list{
+                        background-color: var(--caify-blue-01);
+                        border-radius: var(--size-10px);
+                        box-sizing: border-box;
+
+                        .payment--complete__item{
+
+                            .payment--complete__label,.payment--complete__value{
+                                font-size: var(--size-14px);
+                            }
+                        }
+                    }
+                    .payment--complete__note{
+                        display: none;
+                        font-size: var(--size-12px);
+                        color: var(--caify-gray-04);
+
+                        .payment--complete__link{
+                            border-bottom: 1px solid var(--caify-gray-04);
+                        }
+                    }
+                }
+            }
+        }
+        
+    }
+}
+
+
+
+//*************************************************************
+// payment--complete
+//
+// end ↑↑↑
+//*************************************************************

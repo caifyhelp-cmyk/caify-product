@@ -1,0 +1,188 @@
+.table{
+    width: 100%;
+    border-top: 2px solid $color-primary;
+    th{
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: #000;  
+        vertical-align: middle;
+        border-bottom: 1px solid #E0E0E0;
+        padding: 1.25rem; 
+        text-align: center;
+    }
+    td{
+        padding: 1.25rem;
+        border-bottom: 1px solid #E0E0E0;
+        padding: 1.25rem;
+        text-align: center;
+
+        &.text--left{
+            text-align: left;
+        }
+         
+    }
+}
+
+.total__num{
+    font-size: 0.9375rem;
+    margin-bottom: 1rem;
+    color: #565656;
+    strong{
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: $color-primary;
+    }
+}
+.table--join{
+    width: 100%;
+    border-top: 2px solid $color-primary;
+    th{
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: #000;  
+        vertical-align: middle; 
+        padding: 1.25rem;  
+        text-align: left;
+        text-indent: 3rem;
+        border-bottom: 1px solid #E0E0E0;
+
+        @media screen and (max-width: 768px) {
+            text-indent: 0;
+            font-size: 1rem;
+            padding: 0.8rem;
+        }
+    }
+    td{
+        padding: 1.25rem;
+        border-bottom: 1px solid #E0E0E0;
+        padding: 1.25rem;
+        text-align: center;
+        @media screen and (max-width: 768px) {
+            padding: 0.8rem;
+        }
+    }
+}
+
+//view
+.output__view{
+
+    .output__view__title{
+        border-bottom: 1px solid $color-primary;
+        padding: 1.25rem 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 1.125rem;
+    }
+
+    .output__view__content{
+        padding: 1.25rem ;
+    }
+    .output__view__file{
+        padding: 1rem 0;
+        text-align: right;
+        .btn--copy{
+            display: inline-block;
+        }
+    }
+
+    .output__view__content{
+        border: 1px solid #E0E0E0;
+        border-radius: 0.625rem;
+
+        .output__content__item{
+            padding:1rem;
+        }
+    }
+
+}
+.button__board{
+    display: flex;
+    gap: 1.25rem;
+    margin-top: 2rem; 
+     
+    .btn{
+        flex: 1 ;
+    }
+
+}
+//갤러리
+.list__gallery{     
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+
+    .gallery__item{
+        border: 1px solid #E0E0E0;
+
+        .thumb{
+            width: 100%; 
+            img{
+                width: 100%;
+                height: auto;
+                object-fit: cover;
+            }
+        }
+        .detail{
+            padding: 1rem;
+
+            .title{
+                font-size:1rem;
+                font-weight: 500;
+                color: #000; 
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                word-break: break-all;
+                margin-bottom: 0.5rem;                
+            }
+            .date{
+                font-size: 0.9375rem; 
+                color: #565656;
+                margin-bottom: 0.5rem;                
+            }
+        }
+        .btn__list{
+           
+
+        }
+        
+        
+
+    }
+}
+
+.pagination{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 3rem;
+    .pagination__item{ 
+        width: 2.5rem;        
+        height: 2.5rem; 
+        border-radius: 0.625rem;
+        color: #000;
+        font-size: 1.125rem;
+        font-weight: 500;
+        border: 1px solid #E0E0E0;
+        align-content: center;
+        text-align: center;
+
+        &.active{
+            background: $color-primary;
+            border: 1px solid $color-primary;
+            color: #fff;
+        }
+        &.pagination__item--prev{
+            font-size: 0;
+            background: url("../../images/chevron-left.svg") no-repeat center center;
+        }
+        &.pagination__item--next{
+            font-size: 0;
+            background: url("../../images/chevron-right.svg") no-repeat center center;
+        }
+    }
+}

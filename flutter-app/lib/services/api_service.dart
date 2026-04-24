@@ -213,4 +213,116 @@ class ApiService {
       body: jsonEncode({'reason': reason}),
     );
   }
+
+  // ── 네이버 블로그 ID ─────────────────────────────────────────
+  static Future<String?> fetchNaverBlogId() async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) return null;
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/naver-blog')
+          .replace(queryParameters: {'member_pk': cfg['memberId']!});
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        return data['blog_id'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<bool> saveNaverBlogId(String blogId) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return false;
+    try {
+      final res = await http.patch(
+        Uri.parse('${cfg['apiBase']}/api/naver-blog'),
+        headers: await _headers(),
+        body: jsonEncode({'member_pk': cfg['memberId']!, 'blog_id': blogId}),
+      ).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── 워크플로우 ───────────────────────────────────────────────
+  static Future<Map<String, dynamic>?> fetchWorkflow() async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) return null;
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/workflow')
+          .replace(queryParameters: {'member_pk': cfg['memberId']!});
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<Map<String, dynamic>> provisionWorkflow() async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    try {
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/workflow/provision'),
+        headers: await _headers(),
+        body: jsonEncode({'member_pk': cfg['memberId']!}),
+      ).timeout(const Duration(seconds: 15));
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': '연결 실패: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> modifyWorkflow(String instruction) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    try {
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/workflow/modify'),
+        headers: await _headers(),
+        body: jsonEncode({'member_pk': cfg['memberId']!, 'instruction': instruction}),
+      ).timeout(const Duration(seconds: 10));
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': '연결 실패: $e'};
+    }
+  }
+
+  // ── 키워드 순위 ──────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> fetchRanks() async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty || cfg['memberId']!.isEmpty) return [];
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/rank')
+          .replace(queryParameters: {'member_pk': cfg['memberId']!});
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        return List<Map<String, dynamic>>.from(data['ranks'] ?? []);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<Map<String, dynamic>> checkRank(String keyword, String blogId) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {'ok': false, 'error': '서버 미설정'};
+    try {
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/rank/check'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'member_pk': cfg['memberId']!,
+          'keyword': keyword,
+          'blog_id': blogId,
+        }),
+      ).timeout(const Duration(seconds: 15));
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'ok': false, 'error': '연결 실패: $e'};
+    }
+  }
 }

@@ -1281,6 +1281,264 @@ app.post('/admin/reset-db', (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════
+// 네이버 블로그 ID 관리
+// GET  /api/naver-blog?member_pk=X   → { ok, blog_id }
+// PATCH /api/naver-blog              → body { member_pk, blog_id } → { ok }
+// ════════════════════════════════════════════════════════════════
+
+const naverBlogIds = { 1: 'testblog_dental', 2: 'gangnam_dental' };
+
+app.get('/api/naver-blog', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.query.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+  res.json({ ok: true, blog_id: naverBlogIds[pk] || null });
+});
+
+app.patch('/api/naver-blog', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.body.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+  naverBlogIds[pk] = (req.body.blog_id || '').trim() || null;
+  console.log(` [naver-blog] member=${pk} blog_id=${naverBlogIds[pk]}`);
+  res.json({ ok: true });
+});
+
+// ════════════════════════════════════════════════════════════════
+// 워크플로우 관리
+// GET  /api/workflow?member_pk=X         → { ok, provisioned, workflows, keywords, schedule }
+// POST /api/workflow/provision           → body { member_pk } → { ok, workflows }
+// POST /api/workflow/modify              → body { member_pk, instruction } → { ok, message }
+// ════════════════════════════════════════════════════════════════
+
+const memberWorkflows = {
+  1: {
+    provisioned: true,
+    keywords: ['임플란트', '스케일링'],
+    workflows: [
+      { type: 'case',  name: '1 테스트 치과 - case',  active: true,  workflow_id: 'wf_case_001' },
+      { type: 'info',  name: '1 테스트 치과 - info',  active: true,  workflow_id: 'wf_info_001' },
+      { type: 'promo', name: '1 테스트 치과 - promo', active: false, workflow_id: 'wf_promo_001' },
+      { type: 'plusA', name: '1 테스트 치과 - plusA', active: true,  workflow_id: 'wf_plusa_001' },
+    ],
+    schedule: '월·수·금 오전 10시',
+    last_modified: null,
+  },
+};
+
+app.get('/api/workflow', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.query.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+  const wf = memberWorkflows[pk];
+  if (!wf) return res.json({ ok: true, provisioned: false, workflows: [], keywords: [], schedule: null });
+  res.json({ ok: true, ...wf });
+});
+
+app.post('/api/workflow/provision', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.body.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  const info = members.find(m => m.id === pk);
+  const name = info?.company_name || `member_${pk}`;
+  const prompt = prompts.find(p => p.member_pk === pk);
+  const keywords = prompt
+    ? prompt.product_name.split('/').map(k => k.trim()).filter(Boolean)
+    : [];
+
+  const workflows = ['case', 'info', 'promo', 'plusA'].map(type => ({
+    type,
+    name: `${pk} ${name} - ${type}`,
+    active: type !== 'promo',
+    workflow_id: `wf_${type}_${pk}_${Date.now()}`,
+  }));
+
+  memberWorkflows[pk] = { provisioned: true, keywords, workflows, schedule: '월·수·금 오전 10시', last_modified: null };
+  console.log(` [workflow/provision] member=${pk} name="${name}"`);
+  res.json({ ok: true, message: `워크플로우 4개 생성됨 (${name})`, workflows });
+});
+
+app.post('/api/workflow/modify', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.body.member_pk || member.id, 10);
+  const { instruction } = req.body;
+  if (!instruction?.trim()) return res.status(422).json({ ok: false, error: 'instruction is required' });
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  const wf = memberWorkflows[pk];
+  if (!wf) return res.status(404).json({ ok: false, error: '워크플로우가 설정되지 않았습니다.' });
+
+  wf.last_modified = new Date().toISOString();
+
+  // 키워드 변경 파싱
+  const kwMatch = instruction.match(/키워드[:\s]+([^\n]+)/);
+  if (kwMatch) {
+    wf.keywords = kwMatch[1].split(/[,、\s]+/).map(k => k.trim()).filter(Boolean);
+  }
+
+  // 채팅 확인 메시지 추가
+  messages.push({
+    id: nextMsgId++,
+    member_pk: pk,
+    type: 'workflow.modified',
+    is_system: true,
+    text: `워크플로우 수정 요청이 접수됐습니다.\n\n"${instruction.trim().substring(0, 60)}" 내용을 반영해 다음 포스팅부터 적용됩니다.`,
+    post_id: null, post_title: null, post_html: null,
+    meta: { instruction: instruction.trim() },
+    actions: [], read: false,
+    created_at: new Date().toISOString(),
+  });
+  saveDb();
+
+  console.log(` [workflow/modify] member=${pk} "${instruction.substring(0, 40)}"`);
+  res.json({ ok: true, message: '수정 요청이 접수됐습니다.' });
+});
+
+// ════════════════════════════════════════════════════════════════
+// 키워드 순위 체크
+// GET  /api/rank?member_pk=X                    → { ok, ranks: [...] }
+// POST /api/rank/check                          → body { member_pk, keyword, blog_id } → { ok, rank, prev_rank }
+// ════════════════════════════════════════════════════════════════
+
+const rankData = {
+  '1_임플란트': [
+    { rank: 18, checked_at: new Date(Date.now() - 7 * 86400000).toISOString() },
+    { rank: 12, checked_at: new Date(Date.now() - 3 * 86400000).toISOString() },
+  ],
+  '1_스케일링': [
+    { rank: 32, checked_at: new Date(Date.now() - 5 * 86400000).toISOString() },
+    { rank: 25, checked_at: new Date(Date.now() - 2 * 86400000).toISOString() },
+  ],
+};
+
+app.get('/api/rank', (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+  const pk = parseInt(req.query.member_pk || member.id, 10);
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  const prefix = `${pk}_`;
+  const ranks = Object.entries(rankData)
+    .filter(([k]) => k.startsWith(prefix))
+    .map(([k, hist]) => {
+      const kw = k.slice(prefix.length);
+      const latest = hist[hist.length - 1];
+      const prev   = hist.length > 1 ? hist[hist.length - 2] : null;
+      return { keyword: kw, rank: latest?.rank ?? null, prev_rank: prev?.rank ?? null, checked_at: latest?.checked_at ?? null };
+    });
+
+  res.json({ ok: true, ranks });
+});
+
+// ── 네이버 블로그 검색 순위 크롤러 ──────────────────────────────────
+// 네이버 블로그 검색 결과에서 blog_id 위치를 찾아 순위 반환
+// 최대 50위(5페이지)까지 탐색. 발견 못 하면 { rank: null, found: false }
+async function checkNaverBlogRank(keyword, blogId) {
+  const MAX_RESULTS = 50;
+  const PER_PAGE    = 10;
+  const PAGES       = Math.ceil(MAX_RESULTS / PER_PAGE);
+  const seen        = new Set();
+  let   rank        = 0;
+
+  for (let page = 1; page <= PAGES; page++) {
+    const start = (page - 1) * PER_PAGE + 1;
+    const url   = `https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(keyword)}&start=${start}`;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept':          'text/html,application/xhtml+xml',
+          'Accept-Language': 'ko-KR,ko;q=0.9',
+          'Referer':         'https://www.naver.com/',
+        },
+      });
+      clearTimeout(timer);
+
+      const html = await res.text();
+
+      // blog.naver.com/{blogId}/{postId} 또는 m.blog.naver.com/{blogId}/{postId}
+      const re = /(?:https?:\/\/)?(?:m\.)?blog\.naver\.com\/([a-zA-Z0-9_.-]+)\/(\d+)/g;
+      let m;
+      while ((m = re.exec(html)) !== null) {
+        const foundId = m[1];
+        const postId  = m[2];
+        const key     = `${foundId}/${postId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rank++;
+        if (foundId.toLowerCase() === blogId.toLowerCase()) {
+          console.log(` [rank/crawl] "${keyword}" → ${foundId} 발견: ${rank}위 (page ${page})`);
+          return { rank, found: true };
+        }
+        if (rank >= MAX_RESULTS) return { rank: null, found: false };
+      }
+    } catch (e) {
+      console.error(` [rank/crawl] page=${page} 오류:`, e.message);
+      if (rank === 0) return { rank: null, found: false, error: e.message };
+      break;
+    }
+
+    if (page < PAGES) await new Promise(r => setTimeout(r, 300));
+  }
+
+  console.log(` [rank/crawl] "${keyword}" → ${blogId} 50위 밖`);
+  return { rank: null, found: false };
+}
+
+app.post('/api/rank/check', async (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const pk       = parseInt(req.body.member_pk || member.id, 10);
+  const keyword  = (req.body.keyword  || '').trim();
+  const blog_id  = (req.body.blog_id  || '').trim();
+
+  if (!keyword)  return res.status(422).json({ ok: false, error: 'keyword is required' });
+  if (!blog_id)  return res.status(422).json({ ok: false, error: 'blog_id is required' });
+  if (!isAdmin(member) && pk !== member.id)
+    return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
+
+  console.log(` [rank/check] member=${pk} keyword="${keyword}" blog_id="${blog_id}"`);
+
+  const result = await checkNaverBlogRank(keyword, blog_id);
+
+  const key  = `${pk}_${keyword}`;
+  if (!rankData[key]) rankData[key] = [];
+  const prev  = rankData[key].length > 0 ? rankData[key][rankData[key].length - 1] : null;
+  const entry = { rank: result.rank, found: result.found, checked_at: new Date().toISOString() };
+  rankData[key].push(entry);
+
+  res.json({
+    ok:         true,
+    keyword,
+    rank:       result.rank,
+    found:      result.found,
+    prev_rank:  prev?.rank ?? null,
+    checked_at: entry.checked_at,
+    message:    result.found
+      ? `${result.rank}위에서 발견됐습니다.`
+      : '상위 50위 내에서 발견되지 않았습니다.',
+  });
+});
+
 // ── 상태 확인 ────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {
@@ -1308,6 +1566,13 @@ app.get('/', (req, res) => {
       'POST /api/messages',
       'POST /api/messages/:id/action',
       'POST /api/messages/:id/read',
+      'GET /api/naver-blog?member_pk=X',
+      'PATCH /api/naver-blog',
+      'GET /api/workflow?member_pk=X',
+      'POST /api/workflow/provision',
+      'POST /api/workflow/modify',
+      'GET /api/rank?member_pk=X',
+      'POST /api/rank/check',
     ],
   });
 });

@@ -1,0 +1,1816 @@
+
+/***********************************************************************************
+html.body                                                     
+**********************************************************************************/
+
+html,
+body {
+    font-family: 'Pretendard',"Noto Sans KR", sans-serif;
+    word-break: keep-all;
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--caify-black);  
+    
+
+    @media screen and (max-width:1024px) {
+        font-size: 14px !important;
+    }
+
+    @media screen and (max-width: 768px) {
+        font-size: 12px !important;
+        line-height: 1.2;
+    }
+    @media screen and (max-width: 600px) {
+        font-size: 11px !important;
+    }
+
+}
+a,button,label{cursor: pointer;}
+button {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    outline: none;
+    
+    /* 아이폰(Safari) 등에서 발생하는 둥근 모서리 및 기본 그림자 제거 */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+html {
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+}
+ 
+.header{
+    height: var(--header_h);
+    // border-bottom: 1px solid #CACACA;
+    
+
+    .header__inner{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 100%;
+        width: 95%;
+        margin: 0 auto;
+    }
+        
+
+    .logo--caify {
+        width: 123px;
+        height: 30px;
+        font-size: 0;  
+
+        a {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-image: url("../../images/logo.png");
+            background-size: cover;
+            background-repeat: no-repeat;            
+        }
+    }
+
+    nav{
+         
+        text-align: right;
+        .nav__list{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .nav__item{
+            a{
+                display: flex;
+                align-items: center;
+                gap: 0.625rem;
+            }
+        }
+    }
+
+}
+.container{    
+    width:var(--container_w);
+    height: 100%;
+    display: flex;  
+
+    .snb{
+        width: var(--snb_w); 
+        background: #F5F5F5; 
+        height: auto;
+
+        .snb__inner{
+            padding: 2rem 2rem;
+            .snb__list{
+                .snb__title{                     
+                    color: #787878;
+                    font-weight: 400;
+                    margin: 1rem 0 0.625rem 0;
+                    font-size: 0.9375rem;
+                }
+                li{
+                    line-height: 1.3;
+                    font-size: 1.125rem;
+                    font-weight: 500;
+                    margin-bottom: 0.8rem;
+
+                    a{
+                        display: block;
+                        width: 100%;
+                        height: 100%;
+
+                        span{
+                            padding-left: 1.8rem;
+                        }
+
+                        &:hover{
+                            span{
+                                color: $color-primary;
+                            }
+                        }
+                    }
+
+                    &[data-snb="snb__item1"]{
+                        background: url("../../images/left-menu-icon1.png") no-repeat left center;
+                    }
+                    &[data-snb="snb__item2"]{
+                        background: url("../../images/left-menu-icon2.png") no-repeat left center;
+                    }
+                    &[data-snb="snb__item3"]{
+                        background: url("../../images/left-menu-icon3.png") no-repeat left center;
+                    }
+
+
+                }
+            }
+        }
+    }
+    .content__wrap{
+        width: calc(100% - var(--snb_w));
+        height: 100%; 
+        padding-bottom: 2rem;
+    }
+
+    
+}
+.content__title {
+    margin-top: 2rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #000;
+    border-bottom: 1px solid #E0E0E0;
+    padding-bottom: 1rem;
+}
+
+.content__inner{ 
+    margin: 0 auto;
+    width: 85%;
+    
+
+    .content__header{
+        height: 100px;
+    }
+
+    
+
+    .content__header{
+        text-align: center;
+        height: 10rem;
+        align-content: center;
+
+
+        .content__header__title{
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #000; 
+        }
+        .content__header__desc{ 
+            font-weight: 400;
+            color: #787878;
+        }
+    }
+}
+
+.table--prompt{
+    width: 100%;
+    border-top: 1px solid #2484F4;
+    tr{
+        border-bottom: 1px solid #E0E0E0;
+    }
+
+    th{
+        width: 38%;
+        text-align: left;
+        text-indent: 3rem;
+        font-weight: 500;
+        font-size: 1.125rem;
+        vertical-align: middle;
+    }
+    td{
+        width: calc(100% - 38%);
+        padding: 1rem; 
+
+        .fieldset--flex{
+            display: flex;
+            flex-wrap: wrap;
+            gap:0.6rem 1rem; 
+            
+            label{
+                flex: 1 1 45%;
+            }
+        }
+        
+    }
+}
+
+
+.file__upload__wrap{
+    width: 100%;
+    padding: 3rem;
+    background: #F7F7F7;
+    border-radius: 0.625rem;
+    .file__upload__area{
+        width: 100%;
+        height: 100%;
+        background: #fff;
+        border-radius: 0.625rem;
+        border: 1px dashed #CACACA;
+        align-content: center;
+        padding: 3rem;
+    }
+}
+
+.file__list{
+    .file__list__item{
+        border: 1px solid #CDCDCD;
+        border-radius: 0.625rem;
+        padding: 1rem;
+        margin-top: 0.625rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+}
+
+
+
+
+
+
+
+
+// // start**************************
+// //common__main
+
+// .common__main{
+//     position: relative;
+//     width: 100%;
+//     min-height: 100vh;
+//     margin: 0 auto;
+//     display: flex;
+// }
+
+// .wrap--padding{
+//     position: relative;
+//     padding: calc(var(--header_h) * 2) 0;
+// }
+
+// //common__main
+// // end**************************
+
+
+
+
+
+
+
+
+
+//*************************************************************
+// header
+// 
+// start ↓↓↓
+//*************************************************************
+
+.header{
+    position: relative;
+    
+        .header__innear{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: var(--header_h);
+            z-index: 999;
+        }
+    
+    .gnb{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 50px;
+        padding: 0 5%;
+
+        .gnb__logo{
+            display: flex;
+            align-items: center;
+            width: var(--size-150px);
+            height: 100%;
+            padding-right: 2rem;
+            
+            .gnb__logo-link{
+                display: block;
+                width: 100%;
+            }
+            
+        }
+        .gnb__menu{
+            display: flex;
+            padding: 0 5vw;
+
+            .gnb__menu-item{
+                margin: 0 1rem;
+            }
+        }
+        .gnb__login{
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: var(--size-150px);
+            height: 100%;
+
+            &:hover .login__wrap {
+                opacity: 1;
+                visibility: visible;
+                transform: translateY(0);
+            }
+            
+            .login__wrap{
+                position: absolute;
+                right: -5%;
+                top: 100%;
+                transform: translateY(-10px);
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+        }
+    }
+    .gnb__dropdown{
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 50px;
+        padding: 0 5%;
+
+        .gnb__lnb{
+            .lnb__panel{
+                display: flex;
+                gap: 2rem;
+            }
+        }
+    }  
+}
+
+
+//*************************************************************
+// header 
+// 
+// end ↑↑↑
+//*************************************************************
+
+
+
+
+
+
+
+
+
+//*************************************************************
+// footer 
+// 
+// start ↓↓↓
+//*************************************************************
+
+
+
+.footer{
+    width: 100%;
+    margin: 0 auto;
+    flex-shrink: 0; //header,footer 고정, main만 늘어나게
+
+    .footer__logo{
+
+        .footer__logo-link{
+            display: flex;
+            width: 90%;
+            max-width: 1920px;
+            margin: 0 auto;
+        }
+    }
+    
+    .footer__inner{
+        width: 90%;
+        max-width: 1920px;
+        margin: 0 auto;
+        padding: var(--size-35px) 0;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+
+        .footer__company,.footer__contact{
+
+            .footer__definition-list{
+                display: flex;
+                flex-direction: column;
+                gap: 0.85rem;
+
+                div{
+                    display: flex;
+                    gap: 0.5rem;
+                }
+            }
+        }
+        
+        .footer__contact{
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-end;
+
+            .footer__definition-list{
+
+                div{
+                    justify-content: flex-end;
+                    align-items: center;
+                }
+            }
+            .footer__menu{
+                display: flex;
+                justify-content: flex-end;
+                gap: 1rem;
+            }
+        }
+    }
+}
+
+
+
+
+//*************************************************************
+// footer 
+// 
+// end ↑↑↑
+//*************************************************************
+
+
+
+
+
+
+//*************************************************************
+//전체 공통
+// 
+// start ↓↓↓
+//*************************************************************
+
+
+
+.main{
+    margin-top: calc(var(--header_h) * -1);
+    min-height: calc(100vh - var(--footer_h)); //footer 높이만큼 빼고 나머지가 최소 높이 유지
+
+    .main__container{
+        width: 100%;
+    }
+}
+
+.section{ 
+    width: 100%;
+    padding: calc(var(--header_h) * 1) 0 0;
+}
+.section--narrow { width: 75%; margin: 0 auto; }
+.section--half{ 
+    width: 50%;
+    margin: 0 auto;
+}
+
+
+
+//*************************************************************
+//전체 공통
+// 
+// end ↑↑↑
+//*************************************************************
+
+
+
+
+
+
+//*************************************************************
+// service / service--index 
+// service--offer-wrap
+// service--offer-each / service--offer-package
+//
+// start ↓↓↓
+//*************************************************************
+
+.service{
+    position: relative;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+//*****************
+// service--index start ↓↓↓
+//*****************
+    
+
+.service--index{
+    height: 90vh;
+
+    .service__hero{
+        .service__hero-logo{
+            margin-bottom: var(--size-40px);
+        }
+    }
+        
+    .service__card-list{
+        display: flex;
+        gap: var(--size-70px);
+
+        .service__card{
+            display: flex;
+            justify-content: flex-start;
+            
+            .service__card-link{
+                display: flex;
+                flex-direction: column;
+                padding: var(--size-50px) var(--size-30px);
+                gap: var(--size-24px);
+                
+            }
+        }
+    }
+}
+
+
+//*****************
+// service--index ↑↑↑ end 
+//*****************
+
+
+
+
+
+
+
+//*****************
+// service--offer-wrap start ↓↓↓
+//*****************
+    
+
+
+.service--offer-wrap{
+    width: 100%;
+    position: relative;
+    
+    .service__hero{
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        width: 100%;
+        gap: var(--size-8px);
+        z-index: 1;
+
+        .service__hero-logo{
+            display: flex;    
+            flex-direction: column;
+            align-items: center;
+            width: var(--size-100px);
+            margin-bottom: var(--size-30px);
+            gap: var(--size-30px);
+        
+            .star-line {
+                width: 18%;
+            }
+
+            .caify-logo{
+                width: 95px;
+            }
+        }
+        .service__hero-title-wrap{
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            
+        }
+    }
+}
+
+
+//*****************
+// service--offer-wrap end ↑↑↑
+//*****************
+    
+
+
+//*****************
+// service--offer-each start ↓↓↓
+//*****************
+
+
+
+.service--offer-each{
+    width: 100%;
+    flex-direction: column;
+    padding-top: 3.5rem;  
+
+    .offer-list{
+        display: flex;
+        position: relative;
+        padding: var(--size-30px) var(--size-45px);
+        margin: var(--size-50px) 0 var(--size-50px);
+                
+        .offer-list__item{
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem var(--size-40px);
+            z-index: 1; // before로 만든 이미지 위에 올라옴
+
+            .offer-list__info{
+                display: flex;
+                flex-direction: column;
+                align-items: center; 
+                text-align: center;
+                
+                .offer-list__title{
+                    display: inline-block;
+                    margin: var(--size-20px) 0 0.5rem;
+                }
+                .offer-list__text{
+                    height: var(--size-60px);
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                }
+            }
+            .offer-list__price{
+                width: 100%;
+                text-align: center;
+                margin: 1.25rem var(--size-24px) 1.5rem;
+            }
+        }
+    }
+}
+
+
+//*****************
+// service--offer-each end ↑↑↑
+//*****************
+    
+
+//*****************
+// service--offer-package start ↓↓↓
+//*****************
+    
+
+.service--offer-package{
+    padding-bottom: 3.5rem;
+    
+    .offer-package__discount{
+        width: 100%;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--size-20px);
+        margin: var(--size-50px) 0 var(--size-24px);
+
+        .discount__title{
+            text-align: center;
+        }
+    }
+    .offer-package__date{
+        display: flex;
+        text-align: center;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+
+    }
+    .offer-package__product{
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--size-30px);
+        margin-top: var(--size-80px);
+
+        .offer-package__card{
+            display: flex;
+            flex-direction: column;
+            padding: var(--size-40px) var(--size-30px) var(--size-30px);
+            gap: var(--size-30px);
+
+            .offer-package__card-header{
+                text-align: center;
+
+                .offer-package__badge{
+                    display: inline-block;
+                }
+                .offer-package__price-wrap{
+                    margin: var(--size-30px) 0 1rem;
+                }
+            }
+            .offer-package__card-body{
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                position: relative;
+                width: 100%;
+
+                .offer-package__sub-title{
+                    display: flex;
+                    width: 100%;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 0.75rem;
+                }
+
+                .offer-package__logo-wrap{
+                    display: flex;
+                    align-items: center;
+                    margin: var(--size-20px) 0 var(--size-30px);
+                    gap: var(--size-10px);
+                }
+                .offer-package__service-list{
+                    width: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    
+                    .offer-package__service-item{
+                        width: 100%;
+                        padding: var(--size-8px) 1rem;
+                    }
+                }
+                .offer-package__detail-list{
+                    display: flex;
+                    flex-direction: column;
+                    margin-top: var(--size-30px);
+                }
+            }
+        }
+
+    }
+}
+
+
+
+//*****************
+// service--offer-package end ↑↑↑
+//*****************
+
+
+
+
+
+
+//*****************
+// service--footer start ↓↓↓
+//*****************
+
+
+
+.service--footer{
+    width: 100%;
+    height: 31.25rem;
+}
+
+
+
+//*****************
+// service--footer end ↑↑↑
+//*****************
+
+
+
+
+//*************************************************************
+// service / service--offer-wrap 
+// service--offer-each / service--offer-package
+// 
+// end ↑↑↑
+//*************************************************************
+
+
+
+
+
+
+
+//*****************
+// subscribe 공통 start ↓↓↓
+//*****************
+    
+
+.subscribe{
+    position: relative;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+//*****************
+// subscribe 공통 end ↑↑↑
+//*****************
+    
+
+.subscribe{
+    height: 90vh;    
+        
+    .subscribe-list{
+        display: flex;
+        gap: var(--size-20px);
+        margin-top: var(--size-70px);
+
+        .subscribe-list__item{
+            display: flex;
+            flex: 1;
+            // min-width: 300px;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: var(--size-30px) var(--size-25px);
+            
+            .subscribe-list__title{
+                color: var(--subscribe-light-blog);
+                font-size: var(--size-20px);
+                font-weight: 400;
+            }
+            .subscribe-list__detail{
+
+                .subscribe-list__price-group{
+                    padding: var(--size-25px) 0 var(--size-20px);
+
+                    .subscribe-list__price-wrap{
+                        
+                        .subscribe-list__price-current{
+                            margin: 0.5rem 0;
+                        }
+                    }
+
+
+                }
+                .subscribe-list__feature-label{
+                    padding: 1rem var(--size-80px);
+                    box-sizing: border-box;
+                    border-radius: var(--size-5px);
+                    background-color: var(--subscribe-text-bg);
+                }
+                .subscribe-list__feature-list{
+                    display: flex;
+                    flex-direction: column;
+                    margin: var(--size-8px) 0;
+                    gap: var(--size-8px);
+
+                    .subscribe-list__feature-item{
+                        display: flex;
+                        flex-direction: column;
+                        align-items: flex-start;
+                        text-align: left;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+//*************************************************************
+// contact
+// 
+// start ↓↓↓
+//*************************************************************
+
+
+
+//*****************
+// contact 공통 start ↓↓↓
+//*****************
+
+
+.contact{
+    position: relative;
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    margin: 0 auto;
+    
+    .contact__aside{
+        position: relative;
+        display: flex;
+        width: 40vw;
+
+        .contact__aside-inner{
+            position: relative;
+            width: 100%;
+            min-height: 100vh;
+
+            .caify-glass--visual{
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                transform: translate(-82%, -60%);
+                width: 45rem;
+                height: fit-content;
+            }
+
+            .contact__aside-info{
+                position: sticky;
+                top: 50%;
+                transform: translateY(-100%);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                gap: 1rem;
+                margin-left: 5.5vw;
+
+                .caify-logo{
+                    width: 16rem;
+                }
+            }
+        }
+    }
+    
+    .contact__contents{
+        width: 60vw;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: var(--header_h) 0;
+        
+        .contact__contents-inner{
+            width: 80%;
+            margin-left: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+
+            .contact__contents-card{
+                width: 90%;
+                min-width: 300px;
+                display: flex;
+                flex-direction: column;
+            }
+        }
+    }
+}
+
+
+
+
+//*****************
+// contact 공통 ↑↑↑ end 
+//*****************
+
+
+
+//*****************
+// contact--form start ↓↓↓
+//*****************
+
+
+.contact{
+    position: relative;
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    margin: 0 auto;
+    
+    .contact__aside{
+        position: relative;
+        display: flex;
+        width: 40vw;
+
+        .contact__aside-inner{
+            position: relative;
+            width: 100%;
+            min-height: 100vh;
+
+            .caify-glass--visual{
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                transform: translate(-82%, -60%);
+                width: 45rem;
+                height: fit-content;
+            }
+
+            .contact__aside-info{
+                position: sticky;
+                top: 50%;
+                transform: translateY(-100%);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                gap: 1rem;
+                margin-left: 5.5vw;
+
+                .caify-logo{
+                    width: 16rem;
+                }
+            }
+        }
+    }
+    
+    .contact__contents{
+        
+        .contact__contents-inner{
+
+            .contact__contents-card{
+                max-width: 850px;
+                gap: var(--size-30px);
+
+                .contact-form__group{
+                    
+                    .contact-form__label{
+                        display: inline-block;
+                        padding: var(--size-10px) 0;
+                    }
+                    
+                    .contact-form__group-title{
+                        width: 100%;
+                    }
+
+                    .contact-form__list{
+                        width: 100%;
+                        display: flex;
+                        flex-wrap: wrap;
+                        padding: var(--size-10px);
+                        box-sizing: border-box;
+                        gap: 1rem;
+
+                        .contact-form__item{
+                            width: 100%;
+                            display: flex;
+                            flex-direction: column;
+                            flex: 0 0 calc(50% - 0.5rem);
+                            transition: all 0.3s ease;
+                            min-width: 230px;
+
+                            @media (max-width: 1580px) {
+                                flex: 0 0 100%; 
+                            }
+                        }
+                        .contact-form__item--email{
+                            
+                            .email-form{
+
+                                .email-form__input-wrap{
+                                    display: flex;
+                                    align-items: center;
+
+                                    .contact-form__input{
+                                        min-width: 190px;
+                                        flex: 0.85;
+                                        
+                                        @media (max-width: 1580px) {
+                                            min-width: 250px; 
+                                        }
+                                        @media (max-width: 1080px) {
+                                            min-width: 200px; 
+                                        }
+                                        @media (max-width: 900px) {
+                                            min-width: 170px; 
+                                        }
+                                    }
+                                    .email-form__at {
+                                        flex-shrink: 0;
+                                    }
+                                
+                                    .email-form__select-wrap {
+                                        flex: 1; // 남은 공간 균등하게
+                                    }
+                                }
+                            }
+                        }
+                        // 이메일 form end ↑↑↑
+                        
+                        // 구독유형 form start ↓↓↓
+                        .contact-form__item--subscribe{
+                            
+                            .contact-form__select-wrap{
+                                position: relative;
+                                display: block;
+                            }
+                        }
+
+                        // 유입경로 form start ↓↓↓
+
+                        .contact-form__referrer{
+                            width: 100%;
+                            box-sizing: border-box;
+
+                            .contact-form__radio-wrap{
+                                display: flex;
+                                align-items: center;
+                                gap: 0.75rem;
+
+                                @media (max-width: 1280px) {
+                                    flex-wrap: wrap;
+                                    gap: 0.5rem;
+                                }
+                                
+                                .contact-form__radio-group{
+                                    display: flex;
+                                    
+                                    .contact-form__radio{
+                                        display: flex;
+                                        align-items: center;
+                                    }
+                                }
+                                .contact-form__input--etc{
+                                    width: 100%;
+                                    
+                                }
+                            }
+                        }
+                        .contact-form__contact-message{
+                            width: 100%;
+                            display: flex;
+                            flex-direction: column;
+                            box-sizing: border-box;
+
+                            .contact-form__textarea{
+                                min-height: 150px;
+                                width: 100%;
+                                box-sizing: border-box;
+                            }
+                        }
+                    }
+                }
+                .contact-form__submit{
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    
+                    .agree{
+                        display: flex;
+                        align-items: center;
+                        gap: 0.25rem;
+                        
+                        .agree-label{
+                            position: relative;
+                            cursor: default;
+    
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+//*****************
+// contact--form ↑↑↑ end 
+//*****************
+
+
+
+
+
+//*************************************************************
+//contact
+// 
+// end ↑↑↑
+//*************************************************************
+
+
+
+
+
+
+
+//*************************************************************
+// payment
+// payment--checkout, payment--complete
+// 
+// start ↓↓↓ 재작업
+//*************************************************************
+
+
+//*****************
+// payment 공통 start ↓↓↓
+//*****************
+
+.payment{
+    position: relative;
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    margin: 0 auto;
+    
+    .payment__aside{
+        position: sticky;
+        top: 0;
+        display: flex;
+        width: 40vw;
+        height: 100vh;
+        overflow: hidden;
+
+        .payment__aside-img{
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-82%, -50%);
+            
+            img:nth-child(2){
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                transform: translate(22.5%, -70%);
+            }
+        }
+    }
+    .payment__contents{
+        width: 60vw;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: var(--header_h) 0;
+        
+        .payment__contents-inner{
+            width: 80%;
+            margin-left: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+
+            .payment__contents-title{
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+
+                img{
+                    max-width: 85px;
+                }
+                
+            }
+            .payment__contents-card{
+                width: 85%;
+                min-width: 300px;
+                max-width: 700px;
+                display: flex;
+                flex-direction: column;
+                padding: var(--size-30px);
+                box-sizing: border-box;
+                gap: var(--size-30px);
+                
+            }
+
+        }
+    }
+}
+
+
+//*****************
+// payment 공통 ↑↑↑ end 
+//*****************
+    
+
+
+//*****************
+// payment--checkout 공통 start ↓↓↓
+//*****************
+
+
+.payment__contents-card{ 
+            
+    .payment__box{
+        height: 200px;
+        overflow-y: auto;
+        margin: var(--size-20px) 0 0;
+        padding: 1rem var(--size-25px);
+        box-sizing: border-box;
+
+        // 스크롤바
+        ::-webkit-scrollbar {
+            width: 6px; // 세로 스크롤바 너비
+            height: 6px; // 가로 스크롤바 높이
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--caify-blue-01); // 트랙 색상
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--caify-gray-02); // 스크롤바 색상
+            border-radius: 4px;
+
+            &:hover {
+                background: var(--caify-gray-04);
+            }
+        }
+    }
+    .payment__method,
+    .email-form {
+    display: flex;
+    align-items: center;
+
+        .form-title {
+            flex-shrink: 0;
+            width: 9rem;
+        }
+    }
+}
+
+
+//*****************
+// payment--checkout 공통 ↑↑↑ end 
+//*****************
+    
+
+
+.payment--checkout{
+
+    .payment__contents{
+        
+        .payment__contents-inner{
+
+            .payment__contents-card{
+
+                .payment__subscription-order{
+                    
+                    .payment__subscription-plan{
+                        padding: var(--size-30px) var(--size-25px);
+
+                        .payment__total{
+                            
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: flex-end;
+
+                            .payment_total-price-wrap{
+                                align-items: flex-end;
+                            }
+                        }
+                    }
+                }
+                .payment__agree{
+                    .payment__agree-header{
+                        width: 100%;
+                        display: flex;
+                        align-items: center;
+
+                        .payment__agree-label{
+                            width: 100%;
+                        }
+                    }
+                }
+                .payment__method{
+                    display: flex;
+                    align-items: center;
+
+                    .payment__method-options{
+                        width: 100%;
+                        display: flex;
+                        
+
+                        .payment__method-label{
+                            
+                            display: flex;
+                            align-items: center;
+                            gap: 0.25rem;
+                            cursor: pointer;
+                        }
+                    }
+                }
+                .email-form{
+                    width: 100%;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+
+                    .form-title{
+                        margin: 1.25rem 0 0 0; 
+                    }
+
+                    .email-form__big-wrap{
+                        width: 100%;
+                
+                        .email-form__input-wrap{
+                            display: flex;
+                            align-items: center;
+
+                            .email-form__input{
+                                flex: 1 1 55%;
+                                min-width: 0;
+                                padding: 1.25rem;
+                                box-sizing: border-box;
+                            }
+                        }
+                    }
+                }
+                .payment__submit{
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    gap: var(--size-24px);
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+.payment--complete{
+
+    .payment__contents{ 
+            
+        .payment__contents-inner{
+
+            .payment__contents-card{
+                justify-content: center;
+                align-items: center;
+                padding: var(--size-60px);
+                
+                .payment--complete__contents{
+                    width: 90%;
+                    
+                    .payment--complete__plan-name{
+                        padding: 2rem 1rem 1rem;
+                    }
+
+                    .payment--complete__list{
+                        width: 100%;
+                        display: flex;
+                        flex-direction: column;
+                        padding: var(--size-30px);
+                        box-sizing: border-box;
+                        gap: var(--size-20px);
+
+                        .payment--complete__item{
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                        }
+                    }
+                }
+                .payment__submit-btn{
+                    margin-top: var(--size-30px);
+                }
+            }
+        }
+        
+    }
+}
+
+
+
+//*************************************************************
+// payment
+// payment--checkout, payment--complete
+// 
+// end ↑↑↑ 재작업
+//*************************************************************
+
+
+
+
+
+
+
+//로그인
+.member__login{
+    width: 100%;
+    height: 100vh;
+    background: url("../../images/login_bg.png") no-repeat center center;
+    background-size: cover;
+
+   
+    .member__login__inner{
+        width: var(--container_w);
+        height: 100%;
+        display: flex;  
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto;
+
+        @media screen and (max-width: 768px) {
+            width: 90%;
+            margin: 0 auto;
+            display: block;
+        }
+
+
+        
+       
+    }
+    .member__login__content{
+         display: flex; 
+         gap: 5rem;
+         align-items: center;
+
+        @media screen and (max-width: 768px) {
+            display: block;
+        }
+    }
+
+    .member__login__text{
+        @media screen and (max-width: 768px) {
+            transform: scale(0.8);
+            text-align: left;
+        }
+    }
+
+    .member__login__form{
+        background: #fff;
+        padding: 2rem;
+        border-radius: 0.625rem;
+        
+
+        .member__login__form__title{
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #000;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .checkbox__wrap{
+            margin: 1.2rem 0;
+        }
+
+        .btn--primary{
+            width: 100%;
+        }
+        .checkbox__wrap{ 
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+}
+
+//회원가입
+.member__join{
+    width: 100%;
+    height: 100%;
+    background: url("../../images/admin_login_bg-.png") no-repeat center top;
+    background-size: cover;
+    padding: 5rem 0;
+
+    .member__inner{
+        width: 1200px;
+        margin: 0 auto;
+        background: #fff; 
+        border-radius: 1rem;
+        padding: 2.25rem;
+
+        @media screen and (max-width: 1400px) {
+            width: 90%;
+            margin: 0 auto;
+            display: block;
+        }
+        @media screen and (max-width: 768px) {
+            padding: 2rem;
+        }
+    }
+
+    .member__join__title{
+        height: 6.25rem;
+        text-align: center;
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #000;
+        align-content: center;
+
+        @media screen and (max-width: 768px) {
+            font-size: 1.8rem;
+            height: auto;
+            padding: 1rem 0;
+        }
+    }
+
+    .member__join__title__desc{
+        font-size: 0.9375rem;
+        text-align: right;
+        margin-bottom: 1rem;
+    }
+
+
+    
+}
+.member__join__agree{
+    margin: 1rem 0;
+    line-height: 1.4;
+
+    label{        
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+}
+.terms__item {
+    margin-bottom: 1rem;
+    background: #F7F7F7;
+    border-radius: 0.625rem;
+    padding: 1rem;
+    border: 1px solid #E0E0E0;
+
+    .terms__content{
+         p{
+            padding: 1rem;
+         }
+    }
+}
+
+.file__upload__area.is-dragover {
+    outline: 2px dashed #2E7D32;
+    outline-offset: 6px;
+    background: rgba(46, 125, 50, 0.06);
+}
+
+/* 업로드된 파일이 많아질 때 화면이 무한정 길어지는 문제 해결 */
+.file__list__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.btn--small {
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.file__list.filegrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.file__list.filegrid .file__list__item {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    padding: 10px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+    /* ellipsis가 flex/grid에서 깨지는 것 방지 */
+    overflow: hidden;
+    /* 아주 긴 텍스트가 박스 밖으로 튀어나오는 것 방지 */
+}
+
+.file__list.filegrid .file__list__item.is-hidden {
+    display: none;
+}
+
+.file__thumb {
+    width: 100%;
+    height: 120px;
+    border-radius: 8px;
+    background: #f3f4f6;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.file__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.file__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    /* ellipsis가 flex에서 동작하도록 */
+    width: 100%;
+}
+
+.file__list.filegrid .file__name {
+    font-size: 12px;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    min-width: 0;
+    flex: 1;
+    display: block;
+}
+
+.main__inner{
+    position: relative;
+    height: 100%;
+    
+    align-content: center;
+    .main__list{
+        width: 60%; 
+        margin: 0 auto;
+        display: flex;
+        gap: 1rem; 
+
+        li{
+            flex: 1;
+            text-align: center;
+            border: 1px solid rgba(#fff, 0.1);
+            border-radius: 0.625rem;
+            padding: 2rem 0;
+            background: rgba(#fff, 0.1);
+            color: #fff;
+            transition: 0.2s;
+            
+            &:hover{
+                border: 1px solid rgba(#fff, 0.5);
+                transform: scale(1.05);
+            }
+
+            svg{
+                width: 2rem;
+                height: 2rem;
+                color: #fff;
+                display: block;
+                margin: 0 auto;
+            }
+            span{
+                display: block;
+                margin-top: 0.5rem;
+            }
+        }
+    }
+    
+}
