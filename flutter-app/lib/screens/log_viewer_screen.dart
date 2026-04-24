@@ -154,7 +154,7 @@ class _LogViewerScreenState extends State<LogViewerScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.2),
+                      color: Colors.orange.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -190,7 +190,7 @@ class _LogViewerScreenState extends State<LogViewerScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: isError
                             ? BoxDecoration(
-                                color: Colors.red.withValues(alpha: 0.1),
+                                color: Colors.red.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(3),
                               )
                             : null,
@@ -226,7 +226,7 @@ class _LogViewerScreenState extends State<LogViewerScreen> {
                 Text(
                   '1초 자동갱신',
                   style: TextStyle(
-                    color: _autoScroll ? Colors.greenAccent.withValues(alpha: 0.6) : Colors.white24,
+                    color: _autoScroll ? Colors.greenAccent.withOpacity(0.6) : Colors.white24,
                     fontSize: 10,
                   ),
                 ),

@@ -381,7 +381,7 @@ class _CaseSubmitSheetState extends State<_CaseSubmitSheet> {
                       child: Container(
                         width: 22, height: 22,
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
+                          color: Colors.black.withOpacity(0.6),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.close, color: Colors.white, size: 14),
