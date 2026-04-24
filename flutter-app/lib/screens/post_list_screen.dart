@@ -91,6 +91,7 @@ class _PostListScreenState extends State<PostListScreen>
 
   Future<void> _openCaseSubmit() async {
     final submitted = await showCaseSubmitSheet(context);
+    if (!mounted) return;
     if (submitted == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
