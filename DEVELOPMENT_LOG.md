@@ -84,6 +84,43 @@ caify-product/                         ← GitHub: caifyhelp-cmyk/caify-product
 - `n8n-patches/test_keyword_pool.py` — 일반 5케이스 테스트
 - `n8n-patches/test_keyword_extra.py` — 특수 2케이스 테스트
 
+### v4 업데이트 내용 (2026-04-27) — RAG 고도화
+**핵심 변경: 키워드 심층 조사 + 업체 조사 분리 전달**
+
+#### 배경
+기존 RAG는 `"키워드"에 대해 전문 정보 주세요` 단순 쿼리 → 일반 정보만 가져옴.
+`_biz_research`(업체 조사 결과)가 블로그 생성 프롬프트에 전혀 전달되지 않던 문제.
+
+#### 변경 노드
+
+1. **`Perplexity 요청 준비`**
+   - 모델: `sonar` → `sonar-pro` (더 깊은 검색)
+   - 쿼리 구조화: 6개 항목 명시 요청
+     1. 핵심 개념과 작동 원리 (사실 기반)
+     2. 실제로 많이 하는 실수·오해
+     3. 선택·판단 기준 (비교 포인트)
+     4. 최신 트렌드·변화 (확인된 것만)
+     5. 실무에서 자주 막히는 지점
+     6. 관련 수치·통계 (출처 포함, 확인된 것만)
+
+2. **`프롬프트생성1`**
+   - `_biz_research` (`리서치 결과 파싱` 노드에서 참조) 주입
+   - 컨텍스트 3단 구조로 전달:
+     - `[키워드 심층 조사]` — Perplexity RAG 결과 (사실·원리·기준 뼈대)
+     - `[업체 조사]` — `_biz_research` (서비스·강점·타겟 맥락)
+     - `[고객 정보]` — 기존 contextFull (브랜드명·주소·강점·톤 등)
+   - SYSTEM_PROMPT: 두 소스 역할 구분 지침 추가
+
+#### 캐시 전략
+keyword 단위 캐시 유지 (키워드 지식은 업체 무관 공유 가능)
+
+### 관련 파일
+- `n8n-patches/patch_keyword_pool_v3.py` — 키워드풀 v3 패치
+- `n8n-patches/patch_rag_v1.py` — RAG v1 패치 스크립트
+- `n8n-patches/test_keyword_pool.py` — 일반 5케이스 테스트
+- `n8n-patches/test_keyword_extra.py` — 특수 2케이스 테스트
+- `키워드풀_반영.json` — 최신 워크플로우 (로컬 전용, API 키 포함, gitignore)
+
 ---
 
 ## APK 다운로드 URL 및 GitHub Pages
