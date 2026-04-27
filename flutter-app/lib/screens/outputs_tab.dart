@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/api_service.dart';
@@ -22,19 +23,98 @@ class _OutputsTabState extends State<OutputsTab>
   bool _loadingOutputs = false;
   bool _loadingCases   = false;
 
+  // 진행률 polling
+  final Map<int, Map<String, dynamic>> _caseProgress = {};
+  Timer? _pollTimer;
+  final Set<int> _navigatedCases = {};
+
   static const _green = Color(0xFF03C75A);
 
   @override
   void initState() {
     super.initState();
     _sub = TabController(length: 3, vsync: this);
+    _sub.addListener(_onTabChanged);
     _loadAll();
   }
 
   @override
   void dispose() {
+    _stopPolling();
+    _sub.removeListener(_onTabChanged);
     _sub.dispose();
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_sub.index == 1) _startPollingIfNeeded();
+  }
+
+  void _startPollingIfNeeded() {
+    final hasPending = _cases.any(
+        (c) => (c['ai_status'] as String? ?? 'pending') == 'pending');
+    if (!hasPending) { _stopPolling(); return; }
+    if (_pollTimer != null && _pollTimer!.isActive) return;
+    _pollPendingCases();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _pollPendingCases());
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  Future<void> _pollPendingCases() async {
+    if (!mounted) { _stopPolling(); return; }
+    final pending = _cases
+        .where((c) => (c['ai_status'] as String? ?? 'pending') == 'pending')
+        .toList();
+
+    if (pending.isEmpty) { _stopPolling(); return; }
+
+    for (final c in pending) {
+      final caseId = c['id'] as int;
+      final status = await ApiService.fetchCaseStatus(caseId);
+      if (!mounted) return;
+
+      final aiStatus = status['ai_status'] as String?;
+      final pct      = (status['progress'] as num?)?.toInt() ?? 0;
+      final step     = status['step'] as String? ?? 'AI 처리 중...';
+
+      setState(() => _caseProgress[caseId] = {'progress': pct, 'step': step});
+
+      if (aiStatus == 'done' && !_navigatedCases.contains(caseId)) {
+        _navigatedCases.add(caseId);
+        await _loadCases();
+        if (!mounted) return;
+
+        final updatedCase = _cases.firstWhere(
+          (x) => x['id'] == caseId,
+          orElse: () => <String, dynamic>{},
+        );
+        if (updatedCase.isEmpty) continue;
+
+        // 스낵바 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ AI 포스팅 완성! 발행할 수 있어요.'),
+            backgroundColor: _green,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: '발행하기 →',
+              textColor: Colors.white,
+              onPressed: () => _openCaseDetail(updatedCase),
+            ),
+          ),
+        );
+
+        // 내 사례 탭이면 자동 이동
+        if (_sub.index == 1) {
+          await Future.delayed(const Duration(milliseconds: 600));
+          if (mounted) _openCaseDetail(updatedCase);
+        }
+      }
+    }
   }
 
   Future<void> _loadAll() async {
@@ -61,6 +141,7 @@ class _OutputsTabState extends State<OutputsTab>
         _cases = res;
         _loadingCases = false;
       });
+      _startPollingIfNeeded();
     }
   }
 
@@ -68,7 +149,6 @@ class _OutputsTabState extends State<OutputsTab>
     final submitted = await showCaseSubmitSheet(context);
     if (submitted == true) {
       await _loadCases();
-      // 제출 성공 시 내 사례 탭으로 이동
       _sub.animateTo(1);
     }
   }
@@ -198,7 +278,7 @@ class _OutputsTabState extends State<OutputsTab>
                             color: const Color(0xFFE8F5E9),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.check_circle, size: 11, color: _green),
@@ -239,13 +319,9 @@ class _OutputsTabState extends State<OutputsTab>
     );
   }
 
-  Future<void> _openPost(Map<String, dynamic> item) async {
+  void _openPost(Map<String, dynamic> item) {
     final post = Post.fromJson(item);
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => PublishScreen(post: post)),
-    );
-    _loadOutputs();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => PublishScreen(post: post)));
   }
 
   // ── 내 사례 목록 ──────────────────────────────────────────────
@@ -254,19 +330,9 @@ class _OutputsTabState extends State<OutputsTab>
       return const Center(child: CircularProgressIndicator(color: _green));
     }
     if (_cases.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _loadCases,
-        color: _green,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            const SizedBox(height: 80),
-            _buildEmpty(
-              icon: Icons.inbox_outlined,
-              message: '제출한 사례가 없습니다.\n아래 버튼으로 첫 사례를 제출해보세요.',
-            ),
-          ],
-        ),
+      return _buildEmpty(
+        icon: Icons.medical_services_outlined,
+        message: '제출된 사례가 없습니다.\n아래 버튼으로 첫 사례를 제출해보세요.',
       );
     }
     return RefreshIndicator(
@@ -288,11 +354,11 @@ class _OutputsTabState extends State<OutputsTab>
     final date       = _formatDate(c['created_at'] as String?);
     final files      = (c['files'] as List?) ?? [];
     final filesCount = files.length;
+    final caseId     = c['id'] as int;
 
     final isDone   = status == 'done';
     final isFailed = status == 'failed' || status == 'error';
 
-    // 첫 번째 이미지 썸네일
     final String? thumbUrl = (filesCount > 0 && files.first is Map)
         ? (files.first as Map<String, dynamic>)['url'] as String?
         : null;
@@ -308,7 +374,6 @@ class _OutputsTabState extends State<OutputsTab>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 이미지 썸네일 (done 상태이고 이미지 있을 때)
             if (isDone && thumbUrl != null)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
@@ -361,16 +426,10 @@ class _OutputsTabState extends State<OutputsTab>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
+                  // 진행률 바 (pending 상태)
                   if (!isDone && !isFailed) ...[
                     const SizedBox(height: 10),
-                    const LinearProgressIndicator(
-                      color: _green,
-                      backgroundColor: Color(0xFFE8F5E9),
-                      minHeight: 3,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text('AI가 포스팅을 생성하는 중입니다...',
-                        style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    _buildProgressSection(caseId),
                   ],
                   const SizedBox(height: 8),
                   Row(
@@ -388,7 +447,6 @@ class _OutputsTabState extends State<OutputsTab>
                       ],
                     ],
                   ),
-                  // 발행하기 버튼 (done 상태)
                   if (isDone) ...[
                     const SizedBox(height: 12),
                     SizedBox(
@@ -418,11 +476,47 @@ class _OutputsTabState extends State<OutputsTab>
     );
   }
 
+  Widget _buildProgressSection(int caseId) {
+    final progress = _caseProgress[caseId];
+    final pct  = (progress?['progress'] as int?) ?? 0;
+    final step = (progress?['step'] as String?) ?? 'AI 처리 대기 중...';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(step,
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(
+              pct > 0 ? '$pct%' : '',
+              style: const TextStyle(
+                  fontSize: 11, color: _green, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        pct > 0
+            ? LinearProgressIndicator(
+                value: pct / 100,
+                color: _green,
+                backgroundColor: const Color(0xFFE8F5E9),
+                minHeight: 4,
+              )
+            : const LinearProgressIndicator(
+                color: _green,
+                backgroundColor: Color(0xFFE8F5E9),
+                minHeight: 4,
+              ),
+      ],
+    );
+  }
+
   Future<void> _openCaseDetail(Map<String, dynamic> c) async {
     final postId = c['post_id'];
 
     if (postId != null) {
-      // _outputs에서 먼저 찾기
       final found = _outputs.firstWhere(
         (o) => o['id'].toString() == postId.toString(),
         orElse: () => <String, dynamic>{},
@@ -432,7 +526,6 @@ class _OutputsTabState extends State<OutputsTab>
         return;
       }
 
-      // _outputs에 없으면 API로 직접 조회
       if (!mounted) return;
       showDialog(
         context: context,
@@ -455,7 +548,6 @@ class _OutputsTabState extends State<OutputsTab>
       }
     }
 
-    // 연결된 포스팅 없으면 사례 상세 모달
     _showCaseDetailSheet(c);
   }
 
@@ -515,7 +607,6 @@ class _OutputsTabState extends State<OutputsTab>
               Text(c['ai_summary'] as String,
                   style: const TextStyle(fontSize: 14, height: 1.5)),
             ],
-            // 제출 이미지 목록
             if (files.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Text('제출 이미지',
@@ -567,9 +658,9 @@ class _OutputsTabState extends State<OutputsTab>
 
   Widget _statusBadge(String status) {
     final (label, color, bg) = switch (status) {
-      'done'            => ('완성', _green, const Color(0xFFE8F5E9)),
+      'done'              => ('완성', _green, const Color(0xFFE8F5E9)),
       'failed' || 'error' => ('실패', Colors.red, const Color(0xFFFCE8E6)),
-      _                 => ('처리중', Colors.orange, const Color(0xFFFFF3E0)),
+      _                   => ('처리중', Colors.orange, const Color(0xFFFFF3E0)),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

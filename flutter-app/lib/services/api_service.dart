@@ -471,6 +471,23 @@ class ApiService {
     return [];
   }
 
+  // ── 사례 진행 상태 조회 ──────────────────────────────────────
+  static Future<Map<String, dynamic>> fetchCaseStatus(int caseId) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {};
+    try {
+      final uri = Uri.parse('${cfg['apiBase']}/api/case/$caseId/status');
+      final res = await http.get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      AppLogger.error('CASE', 'fetchCaseStatus ERR — $e');
+    }
+    return {};
+  }
+
   // ── 산출물(Outputs) 목록 ─────────────────────────────────────
   static Future<Map<String, dynamic>> fetchOutputs({int page = 1}) async {
     final cfg = await loadConfig();

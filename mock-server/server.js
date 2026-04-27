@@ -1848,12 +1848,33 @@ app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
         }}],
       }),
     }).then(r => r.json()).then(result => {
-      console.log(` [case/submit] n8n execute 완료: wf=${caseWf.workflow_id} result=${JSON.stringify(result).substring(0, 100)}`);
+      const executionId = result?.data?.executionId ?? result?.executionId;
+      if (executionId) {
+        const c = cases.find(x => x.id === caseItem.id);
+        if (c) { c.execution_id = executionId; saveDb(); }
+        console.log(` [case/submit] n8n execute 완료: wf=${caseWf.workflow_id} executionId=${executionId}`);
+      } else {
+        console.log(` [case/submit] n8n execute 완료 (executionId 없음): ${JSON.stringify(result).substring(0, 100)}`);
+      }
     }).catch(e => {
       console.error(` [case/submit] n8n execute 실패:`, e.message);
     });
   } else {
-    // mock: 3초 후 pending→done 시뮬레이션 + ai_posts 연결
+    // mock: 단계별 진행률 시뮬레이션 → 3초 후 완료
+    const mockStages = [
+      { delay: 300,  progress: 15, step: '사례 분석 중' },
+      { delay: 900,  progress: 35, step: 'AI 포스팅 생성 중' },
+      { delay: 1700, progress: 65, step: '내용 최적화 중' },
+      { delay: 2400, progress: 88, step: '마무리 중' },
+    ];
+    const ci = cases.find(x => x.id === caseItem.id);
+    if (ci) { ci.mock_progress = 5; ci.mock_step = '제출됨'; saveDb(); }
+    mockStages.forEach(({ delay, progress, step }) => {
+      setTimeout(() => {
+        const cx = cases.find(x => x.id === caseItem.id);
+        if (cx && cx.ai_status === 'pending') { cx.mock_progress = progress; cx.mock_step = step; }
+      }, delay);
+    });
     setTimeout(() => {
       const c = cases.find(x => x.id === caseItem.id);
       if (c && c.ai_status === 'pending') {
@@ -1904,6 +1925,66 @@ app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
     ok:      true,
     case_id: caseItem.id,
     message: 'n8n 워크플로우 실행 중입니다. 잠시 후 산출물 탭에서 확인하세요.',
+  });
+});
+
+// ── 사례 진행 상태 (앱 polling용) ────────────────────────────
+app.get('/api/case/:id/status', async (req, res) => {
+  const member = getMemberByToken(req);
+  if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
+
+  const caseId = parseInt(req.params.id, 10);
+  const c = cases.find(x => x.id === caseId && (x.member_pk === member.id || isAdmin(member)));
+  if (!c) return res.status(404).json({ ok: false, error: '사례를 찾을 수 없습니다.' });
+
+  if (c.ai_status === 'done') {
+    return res.json({ ok: true, case_id: c.id, ai_status: 'done', post_id: c.post_id ?? null, progress: 100, step: '완료' });
+  }
+  if (c.ai_status === 'failed' || c.ai_status === 'error') {
+    return res.json({ ok: true, case_id: c.id, ai_status: 'failed', progress: 0, step: '처리 실패' });
+  }
+
+  // 실제 n8n execution_id가 있으면 polling
+  const { N8N_URL, N8N_API_KEY } = n8nCfg;
+  if (c.execution_id && N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+    try {
+      const execRes = await fetch(`${N8N_URL}/api/v1/executions/${c.execution_id}`, {
+        headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+      });
+      if (execRes.ok) {
+        const execData = await execRes.json();
+        const execStatus = execData.status; // 'running', 'success', 'error', 'new', 'waiting'
+        const runData = execData.data?.resultData?.runData ?? {};
+        const completedNodes = Object.keys(runData);
+        const completedCount = completedNodes.length;
+        const TOTAL_NODES = 5;
+        const progress = completedCount === 0 ? 10 : Math.min(Math.round((completedCount / TOTAL_NODES) * 90), 90);
+
+        const stepMap = {
+          '사례 가져오기1': '사례 데이터 조회 중',
+          'HTTP Request':  'AI 포스팅 생성 중',
+          'HTTP Request1': '결과 저장 중',
+        };
+        const lastNode = completedNodes[completedNodes.length - 1] ?? '';
+        const step = stepMap[lastNode] ?? (completedCount > 0 ? `${completedCount}단계 완료` : 'AI 처리 중');
+
+        if (execStatus === 'error') {
+          return res.json({ ok: true, case_id: c.id, ai_status: 'failed', progress: 0, step: '처리 실패' });
+        }
+        return res.json({ ok: true, case_id: c.id, ai_status: 'pending', progress, step });
+      }
+    } catch (e) {
+      console.warn('[case/status] n8n polling 실패:', e.message);
+    }
+  }
+
+  // mock 진행률 반환
+  res.json({
+    ok: true,
+    case_id: c.id,
+    ai_status: c.ai_status ?? 'pending',
+    progress: c.mock_progress ?? 5,
+    step: c.mock_step ?? 'AI 처리 중...',
   });
 });
 
