@@ -293,8 +293,8 @@ class _OutputsTabState extends State<OutputsTab>
     final isFailed = status == 'failed' || status == 'error';
 
     // 첫 번째 이미지 썸네일
-    final String? thumbUrl = filesCount > 0
-        ? (files.first as Map<String, dynamic>?)?['url'] as String?
+    final String? thumbUrl = (filesCount > 0 && files.first is Map)
+        ? (files.first as Map<String, dynamic>)['url'] as String?
         : null;
 
     return Card(
