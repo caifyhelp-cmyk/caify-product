@@ -17,37 +17,22 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
   bool _provisioning = false;
 
   // 편집 상태
-  late List<String> _keywords;
-  late String _schedule;
+  late Set<String> _scheduleDays;
+  late int _scheduleHour;
   late List<Map<String, dynamic>> _workflows;
 
-  final _kwCtrl = TextEditingController();
-
   static const _typeLabels = {
-    'case':  '케이스형',
     'info':  '정보형',
-    'promo': '프로모션형',
-    'plusA': '플러스A형',
+    'mixed': '혼합형',
+    'case':  '사례/후기형',
   };
 
-  static const _scheduleOptions = [
-    '매일 오전 10시',
-    '월·수·금 오전 10시',
-    '화·목 오전 10시',
-    '주 1회 (월요일)',
-    '주 1회 (금요일)',
-  ];
+  static const _allDays = ['월', '화', '수', '목', '금', '토', '일'];
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _kwCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -59,8 +44,10 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
       _data = data;
       _loading = false;
       if (data != null && data['provisioned'] == true) {
-        _keywords  = List<String>.from(data['keywords'] ?? []);
-        _schedule  = (data['schedule'] as String?) ?? _scheduleOptions[0];
+        _scheduleDays = Set<String>.from(
+          (data['schedule_days'] as List?)?.map((e) => e.toString()) ?? ['월', '수', '금'],
+        );
+        _scheduleHour = (data['schedule_hour'] as int?) ?? 10;
         _workflows = List<Map<String, dynamic>>.from(
           (data['workflows'] as List?)?.map((e) => Map<String, dynamic>.from(e)) ?? [],
         );
@@ -70,11 +57,17 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
   }
 
   Future<void> _save() async {
+    if (_scheduleDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('발행 요일을 하나 이상 선택하세요.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
     AppLogger.info('WF_UI', '워크플로우 저장 시작');
     setState(() => _saving = true);
     final res = await ApiService.updateWorkflow(
-      keywords:  _keywords,
-      schedule:  _schedule,
+      scheduleDays: _scheduleDays.toList(),
+      scheduleHour: _scheduleHour,
       workflows: _workflows.map((w) => {'type': w['type'], 'active': w['active']}).toList(),
     );
     if (!mounted) return;
@@ -115,16 +108,18 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     setState(() => _provisioning = false);
   }
 
-  void _addKeyword() {
-    final kw = _kwCtrl.text.trim();
-    if (kw.isEmpty || _keywords.contains(kw)) return;
-    setState(() { _keywords.add(kw); _kwCtrl.clear(); });
-  }
-
-  void _removeKeyword(String kw) => setState(() => _keywords.remove(kw));
-
   void _toggleWorkflow(int idx, bool val) {
     setState(() => _workflows[idx]['active'] = val);
+  }
+
+  void _toggleDay(String day) {
+    setState(() {
+      if (_scheduleDays.contains(day)) {
+        _scheduleDays.remove(day);
+      } else {
+        _scheduleDays.add(day);
+      }
+    });
   }
 
   @override
@@ -172,9 +167,9 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Column(
               children: _workflows.asMap().entries.map((e) {
-                final idx  = e.key;
-                final wf   = e.value;
-                final type = wf['type'] as String? ?? '';
+                final idx   = e.key;
+                final wf    = e.value;
+                final type  = wf['type'] as String? ?? '';
                 final label = _typeLabels[type] ?? type;
                 final active = wf['active'] == true;
                 final isCase = type == 'case';
@@ -217,102 +212,79 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
 
           const SizedBox(height: 20),
 
-          // ── 발행 일정 ────────────────────────────────────────
-          _sectionTitle('발행 일정'),
+          // ── 발행 요일 ─────────────────────────────────────────
+          _sectionTitle('발행 요일'),
           const SizedBox(height: 6),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _scheduleOptions.contains(_schedule) ? _schedule : _scheduleOptions[0],
-                  isExpanded: true,
-                  icon: const Icon(Icons.expand_more, color: Color(0xFF03C75A)),
-                  items: _scheduleOptions.map((s) => DropdownMenuItem(
-                    value: s,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.schedule, size: 16, color: Color(0xFF03C75A)),
-                        const SizedBox(width: 10),
-                        Text(s, style: const TextStyle(fontSize: 14)),
-                      ],
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: _allDays.map((day) {
+                  final selected = _scheduleDays.contains(day);
+                  return GestureDetector(
+                    onTap: () => _toggleDay(day),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: selected ? const Color(0xFF03C75A) : const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? const Color(0xFF03C75A) : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          day,
+                          style: TextStyle(
+                            color: selected ? Colors.white : Colors.black87,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     ),
-                  )).toList(),
-                  onChanged: (v) { if (v != null) setState(() => _schedule = v); },
-                ),
+                  );
+                }).toList(),
               ),
             ),
           ),
 
           const SizedBox(height: 20),
 
-          // ── 타겟 키워드 ──────────────────────────────────────
-          _sectionTitle('타겟 키워드'),
+          // ── 발행 시간 ─────────────────────────────────────────
+          _sectionTitle('발행 시간'),
           const SizedBox(height: 6),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 키워드 칩
-                  if (_keywords.isEmpty)
-                    const Text('키워드를 추가하세요',
-                        style: TextStyle(color: Colors.grey, fontSize: 13))
-                  else
-                    Wrap(
-                      spacing: 8, runSpacing: 6,
-                      children: _keywords.map((kw) => Chip(
-                        label: Text(kw, style: const TextStyle(fontSize: 13)),
-                        backgroundColor: const Color(0xFFE8F5E9),
-                        side: const BorderSide(color: Color(0xFF03C75A), width: 0.8),
-                        deleteIcon: const Icon(Icons.close, size: 14),
-                        deleteIconColor: Colors.grey,
-                        onDeleted: () => _removeKeyword(kw),
-                      )).toList(),
-                    ),
-
-                  const SizedBox(height: 12),
-
-                  // 키워드 입력
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _kwCtrl,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _addKeyword(),
-                          decoration: InputDecoration(
-                            hintText: '키워드 입력 후 + 또는 엔터',
-                            hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-                            filled: true,
-                            fillColor: const Color(0xFFF5F5F5),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          ),
-                          style: const TextStyle(fontSize: 14),
-                        ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: _scheduleHour,
+                  isExpanded: true,
+                  icon: const Icon(Icons.expand_more, color: Color(0xFF03C75A)),
+                  items: List.generate(16, (i) => i + 6).map((h) {
+                    final label = h < 12
+                        ? '오전 $h시'
+                        : h == 12
+                            ? '오후 12시'
+                            : '오후 ${h - 12}시';
+                    return DropdownMenuItem(
+                      value: h,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.schedule, size: 16, color: Color(0xFF03C75A)),
+                          const SizedBox(width: 10),
+                          Text(label, style: const TextStyle(fontSize: 14)),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: _addKeyword,
-                        child: Container(
-                          width: 40, height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF03C75A),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.add, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    );
+                  }).toList(),
+                  onChanged: (v) { if (v != null) setState(() => _scheduleHour = v); },
+                ),
               ),
             ),
           ),
@@ -385,10 +357,9 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
 
   IconData _wfIcon(String type) {
     switch (type) {
-      case 'case':  return Icons.medical_services_outlined;
       case 'info':  return Icons.info_outline;
-      case 'promo': return Icons.campaign_outlined;
-      case 'plusA': return Icons.star_border;
+      case 'mixed': return Icons.auto_awesome_outlined;
+      case 'case':  return Icons.medical_services_outlined;
       default:      return Icons.account_tree_outlined;
     }
   }

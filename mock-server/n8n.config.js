@@ -15,10 +15,9 @@ module.exports = {
 
   // 복제 원본 템플릿 워크플로우 ID
   TEMPLATE_IDS: {
-    case:  'vUlrwTSj0b3TcIKg',  // 서브워크플로우(사례)
-    info:  'DvvwnamBcqnqVgCz',  // 서브워크플로우(info)
-    promo: 'zUhFnjJvA7Fuz6UG',  // 서브워크플로우(promo)
-    plusA: 'gDW5xp9brX889Qmv',  // 서브워크플로우(plusA)
+    info:  'DvvwnamBcqnqVgCz',  // 서브워크플로우(정보형)
+    mixed: 'zUhFnjJvA7Fuz6UG',  // 서브워크플로우(혼합형)
+    case:  'vUlrwTSj0b3TcIKg',  // 서브워크플로우(사례/후기형)
   },
 
   // Queue Worker ID (라우팅 연결용 — provision 시 플레이스홀더 교체)

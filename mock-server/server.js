@@ -400,7 +400,7 @@ app.get('/member/me', (req, res) => {
 // N8N_URL + N8N_API_KEY 환경변수 없으면 mock ID로 대체
 // ════════════════════════════════════════════════════════════════
 
-const WORKFLOW_TYPES = ['case', 'info', 'promo', 'plusA'];
+const WORKFLOW_TYPES = ['info', 'mixed', 'case'];
 
 app.post('/member/provision', async (req, res) => {
   const member = getMemberByToken(req);
@@ -1345,14 +1345,13 @@ app.patch('/api/naver-blog', (req, res) => {
 const memberWorkflows = savedDb?.memberWorkflows ?? {
   1: {
     provisioned: true,
-    keywords: ['임플란트', '스케일링'],
     workflows: [
-      { type: 'case',  name: '1 테스트 치과 - case',  active: true,  workflow_id: 'wf_case_001' },
       { type: 'info',  name: '1 테스트 치과 - info',  active: true,  workflow_id: 'wf_info_001' },
-      { type: 'promo', name: '1 테스트 치과 - promo', active: false, workflow_id: 'wf_promo_001' },
-      { type: 'plusA', name: '1 테스트 치과 - plusA', active: true,  workflow_id: 'wf_plusa_001' },
+      { type: 'mixed', name: '1 테스트 치과 - mixed', active: true,  workflow_id: 'wf_mixed_001' },
+      { type: 'case',  name: '1 테스트 치과 - case',  active: true,  workflow_id: 'wf_case_001' },
     ],
-    schedule: '월·수·금 오전 10시',
+    schedule_days: ['월', '수', '금'],
+    schedule_hour: 10,
     last_modified: null,
   },
 };
@@ -1393,12 +1392,13 @@ app.post('/api/workflow/provision', async (req, res) => {
   if (!isAdmin(member) && pk !== member.id)
     return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
 
+  // 이미 복제 완료된 경우 중복 방지
+  if (memberWorkflows[pk]?.provisioned) {
+    return res.status(409).json({ ok: false, error: '이미 워크플로우가 생성되어 있습니다.' });
+  }
+
   const info = members.find(m => m.id === pk);
   const name = info?.company_name || `member_${pk}`;
-  const prompt = prompts.find(p => p.member_pk === pk);
-  const keywords = prompt
-    ? prompt.product_name.split('/').map(k => k.trim()).filter(Boolean)
-    : [];
 
   const { N8N_URL, N8N_API_KEY, TEMPLATE_IDS } = n8nCfg;
   const workflow_ids = {};
@@ -1408,11 +1408,12 @@ app.post('/api/workflow/provision', async (req, res) => {
     for (const type of WORKFLOW_TYPES) {
       try {
         const templateId = TEMPLATE_IDS[type];
-        if (!templateId) { workflow_ids[type] = `no-template-${type}`; workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: false, workflow_id: `no-template-${type}` }); continue; }
+        if (!templateId) throw new Error(`템플릿 ID 없음: ${type}`);
 
         const tRes = await fetch(`${N8N_URL}/api/v1/workflows/${templateId}`, {
           headers: { 'X-N8N-API-KEY': N8N_API_KEY },
         });
+        if (!tRes.ok) throw new Error(`템플릿 조회 실패: ${tRes.status}`);
         const template = await tRes.json();
 
         const cRes = await fetch(`${N8N_URL}/api/v1/workflows`, {
@@ -1425,38 +1426,44 @@ app.post('/api/workflow/provision', async (req, res) => {
             settings: template.settings,
           }),
         });
+        if (!cRes.ok) throw new Error(`워크플로우 생성 실패: ${cRes.status}`);
         const created = await cRes.json();
         workflow_ids[type] = created.id;
 
-        const shouldActivate = type !== 'promo';
-        if (shouldActivate) {
-          await fetch(`${N8N_URL}/api/v1/workflows/${created.id}/activate`, {
-            method: 'POST',
-            headers: { 'X-N8N-API-KEY': N8N_API_KEY },
-          });
-        }
-        workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: shouldActivate, workflow_id: created.id });
+        await fetch(`${N8N_URL}/api/v1/workflows/${created.id}/activate`, {
+          method: 'POST',
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        });
+
+        workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: true, workflow_id: created.id });
       } catch (e) {
         console.error(`[workflow/provision] ${type} 실패:`, e.message);
-        workflow_ids[type] = `err-${type}`;
-        workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: false, workflow_id: `err-${type}` });
+        // 하나라도 실패하면 전체 실패 처리
+        return res.status(500).json({ ok: false, error: `워크플로우 생성 실패 (${type}): ${e.message}` });
       }
     }
   } else {
     for (const type of WORKFLOW_TYPES) {
       const wfId = `mock-${pk}-${type}-${Date.now()}`;
       workflow_ids[type] = wfId;
-      workflows.push({ type, name: `${pk} ${name} - ${type}`, active: type !== 'promo', workflow_id: wfId });
+      workflows.push({ type, name: `${pk} ${name} - ${type}`, active: true, workflow_id: wfId });
     }
     console.log('[workflow/provision] N8N 미설정 — mock ID 사용');
   }
 
-  memberWorkflows[pk] = { provisioned: true, keywords, workflows, schedule: '월·수·금 오전 10시', last_modified: null };
+  // 모두 성공한 경우에만 저장
+  memberWorkflows[pk] = {
+    provisioned: true,
+    workflows,
+    schedule_days: ['월', '수', '금'],
+    schedule_hour: 10,
+    last_modified: null,
+  };
   if (info) info.n8n_workflow_ids = workflow_ids;
   saveDb();
 
   console.log(` [workflow/provision] member=${pk} name="${name}"`);
-  res.json({ ok: true, message: `워크플로우 4개 생성됨 (${name})`, workflows });
+  res.json({ ok: true, message: `워크플로우 ${WORKFLOW_TYPES.length}개 생성됨 (${name})`, workflows });
 });
 
 // POST /api/workflow/update — 직접 필드 수정 (키워드/스케줄/워크플로우 활성화)
@@ -1470,11 +1477,11 @@ app.post('/api/workflow/update', async (req, res) => {
   const wf = memberWorkflows[pk];
   if (!wf) return res.status(404).json({ ok: false, error: '워크플로우가 설정되지 않았습니다.' });
 
-  if (Array.isArray(req.body.keywords)) {
-    wf.keywords = req.body.keywords.map(k => k.trim()).filter(Boolean);
+  if (Array.isArray(req.body.schedule_days)) {
+    wf.schedule_days = req.body.schedule_days.filter(d => ['월','화','수','목','금','토','일'].includes(d));
   }
-  if (typeof req.body.schedule === 'string' && req.body.schedule.trim()) {
-    wf.schedule = req.body.schedule.trim();
+  if (typeof req.body.schedule_hour === 'number') {
+    wf.schedule_hour = Math.max(0, Math.min(23, req.body.schedule_hour));
   }
   if (Array.isArray(req.body.workflows)) {
     req.body.workflows.forEach(({ type, active }) => {
@@ -1504,7 +1511,7 @@ app.post('/api/workflow/update', async (req, res) => {
     }));
   }
 
-  console.log(` [workflow/update] member=${pk} keywords=${JSON.stringify(wf.keywords)} schedule="${wf.schedule}"`);
+  console.log(` [workflow/update] member=${pk} days=${JSON.stringify(wf.schedule_days)} hour=${wf.schedule_hour}`);
   res.json({ ok: true, message: '워크플로우가 저장됐습니다.' });
 });
 

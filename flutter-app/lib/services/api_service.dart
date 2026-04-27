@@ -347,8 +347,8 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> updateWorkflow({
-    List<String>? keywords,
-    String? schedule,
+    List<String>? scheduleDays,
+    int? scheduleHour,
     List<Map<String, dynamic>>? workflows,
   }) async {
     final cfg = await loadConfig();
@@ -356,8 +356,8 @@ class ApiService {
     AppLogger.info('WF', 'POST /api/workflow/update');
     try {
       final body = <String, dynamic>{'member_pk': cfg['memberId']!};
-      if (keywords != null) body['keywords'] = keywords;
-      if (schedule != null) body['schedule'] = schedule;
+      if (scheduleDays != null) body['schedule_days'] = scheduleDays;
+      if (scheduleHour != null) body['schedule_hour'] = scheduleHour;
       if (workflows != null) body['workflows'] = workflows;
       final res = await http.post(
         Uri.parse('${cfg['apiBase']}/api/workflow/update'),
