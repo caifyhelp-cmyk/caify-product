@@ -1347,9 +1347,9 @@ const memberWorkflows = savedDb?.memberWorkflows ?? {
   1: {
     provisioned: true,
     workflows: [
-      { type: 'info',  name: '1 테스트 치과 - info',  active: true,  workflow_id: 'wf_info_001' },
-      { type: 'mixed', name: '1 테스트 치과 - mixed', active: true,  workflow_id: 'wf_mixed_001' },
-      { type: 'case',  name: '1 테스트 치과 - case',  active: true,  workflow_id: 'wf_case_001' },
+      { type: 'info',  name: '1 테스트 치과 - info',  active: true,  workflow_id: n8nCfg.TEMPLATE_IDS.info },
+      { type: 'mixed', name: '1 테스트 치과 - mixed', active: true,  workflow_id: n8nCfg.TEMPLATE_IDS.mixed },
+      { type: 'case',  name: '1 테스트 치과 - case',  active: true,  workflow_id: n8nCfg.TEMPLATE_IDS.case },
     ],
     schedule_days: ['월', '수', '금'],
     schedule_hour: 10,
