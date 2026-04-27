@@ -289,7 +289,7 @@ class _OutputsTabState extends State<OutputsTab>
     final filesCount = (c['files'] as List?)?.length ?? 0;
 
     final isDone   = status == 'done';
-    final isFailed = status == 'failed';
+    final isFailed = status == 'failed' || status == 'error';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -472,9 +472,9 @@ class _OutputsTabState extends State<OutputsTab>
 
   Widget _statusBadge(String status) {
     final (label, color, bg) = switch (status) {
-      'done'   => ('완성', _green, const Color(0xFFE8F5E9)),
-      'failed' => ('실패', Colors.red, const Color(0xFFFCE8E6)),
-      _        => ('처리중', Colors.orange, const Color(0xFFFFF3E0)),
+      'done'            => ('완성', _green, const Color(0xFFE8F5E9)),
+      'failed' || 'error' => ('실패', Colors.red, const Color(0xFFFCE8E6)),
+      _                 => ('처리중', Colors.orange, const Color(0xFFFFF3E0)),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

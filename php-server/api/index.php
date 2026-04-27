@@ -39,6 +39,7 @@ if ($title === '' || $naverHtml === '' || $customerId === '' || $promptNodeId ==
 // 선택값
 $subject = trim((string)($data['subject'] ?? ''));
 $intro   = trim((string)($data['intro'] ?? ''));
+$caseId  = (int)($data['case_id'] ?? 0);  // 사례형 워크플로우에서 전달
 
 // =======================
 // 3. DB 저장 (INSERT ONLY)
@@ -83,10 +84,23 @@ try {
         ':naver_html'    => $naverHtml,
     ]);
 
+    $insertId = (int)$pdo->lastInsertId();
+
+    // 사례형 워크플로우: case_id 있으면 caify_case.ai_status 를 done으로 업데이트
+    if ($caseId > 0) {
+        try {
+            $pdo->prepare(
+                'UPDATE caify_case SET ai_status = :st WHERE id = :id'
+            )->execute([':st' => 'done', ':id' => $caseId]);
+        } catch (Throwable $ue) {
+            // best-effort: ai_posts 저장은 성공했으므로 무시
+        }
+    }
+
     echo json_encode([
         'ok' => true,
         'message' => 'Inserted successfully',
-        'insert_id' => $pdo->lastInsertId()
+        'insert_id' => $insertId
     ]);
 
 } catch (Throwable $e) {
