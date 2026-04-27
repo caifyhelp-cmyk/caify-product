@@ -1357,6 +1357,29 @@ const memberWorkflows = savedDb?.memberWorkflows ?? {
   },
 };
 
+// ── db.json에서 복원된 오래된 mock/wf_ 워크플로우 ID를 실제 ID로 교체 ──
+// Render 재배포 후에도 db.json이 남아있으면 이전 가짜 ID가 사용되는 문제 방지
+(function migrateWorkflowIds() {
+  const typeMap = { info: n8nCfg.TEMPLATE_IDS.info, mixed: n8nCfg.TEMPLATE_IDS.mixed, case: n8nCfg.TEMPLATE_IDS.case };
+  let changed = false;
+  for (const [, mw] of Object.entries(memberWorkflows)) {
+    if (!Array.isArray(mw.workflows)) continue;
+    for (const wf of mw.workflows) {
+      const isStale = !wf.workflow_id ||
+        wf.workflow_id.startsWith('mock-') ||
+        wf.workflow_id.startsWith('err-') ||
+        wf.workflow_id.startsWith('wf_') ||
+        wf.workflow_id.startsWith('no-template-');
+      if (isStale && typeMap[wf.type]) {
+        console.log(`[migrate] ${wf.type}: ${wf.workflow_id} → ${typeMap[wf.type]}`);
+        wf.workflow_id = typeMap[wf.type];
+        changed = true;
+      }
+    }
+  }
+  if (changed) saveDb();
+})();
+
 app.get('/api/workflow', async (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
