@@ -286,10 +286,16 @@ class _OutputsTabState extends State<OutputsTab>
     final aiTitle    = c['ai_title'] as String?;
     final aiSummary  = c['ai_summary'] as String?;
     final date       = _formatDate(c['created_at'] as String?);
-    final filesCount = (c['files'] as List?)?.length ?? 0;
+    final files      = (c['files'] as List?) ?? [];
+    final filesCount = files.length;
 
     final isDone   = status == 'done';
     final isFailed = status == 'failed' || status == 'error';
+
+    // 첫 번째 이미지 썸네일
+    final String? thumbUrl = filesCount > 0
+        ? (files.first as Map<String, dynamic>?)?['url'] as String?
+        : null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -299,84 +305,114 @@ class _OutputsTabState extends State<OutputsTab>
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: isDone ? () => _openCaseDetail(c) : null,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 이미지 썸네일 (done 상태이고 이미지 있을 때)
+            if (isDone && thumbUrl != null)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: CachedNetworkImage(
+                  imageUrl: thumbUrl,
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      caseTitle,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          caseTitle,
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600, height: 1.4),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _statusBadge(status),
+                    ],
+                  ),
+                  if (isDone && aiTitle != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'AI 제목: $aiTitle',
                       style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600, height: 1.4),
+                          fontSize: 13, color: _green, fontWeight: FontWeight.w500),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (isDone && aiSummary != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      aiSummary,
+                      style: const TextStyle(
+                          fontSize: 12, color: Colors.grey, height: 1.4),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ],
+                  if (!isDone && !isFailed) ...[
+                    const SizedBox(height: 10),
+                    const LinearProgressIndicator(
+                      color: _green,
+                      backgroundColor: Color(0xFFE8F5E9),
+                      minHeight: 3,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text('AI가 포스팅을 생성하는 중입니다...',
+                        style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 12, color: Colors.grey),
+                      const SizedBox(width: 3),
+                      Text(date, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      if (filesCount > 0 && !isDone) ...[
+                        const SizedBox(width: 10),
+                        const Icon(Icons.photo_library_outlined,
+                            size: 12, color: Colors.grey),
+                        const SizedBox(width: 3),
+                        Text('$filesCount장',
+                            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  _statusBadge(status),
-                ],
-              ),
-              if (isDone && aiTitle != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'AI 제목: $aiTitle',
-                  style: const TextStyle(
-                      fontSize: 13, color: _green, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if (isDone && aiSummary != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  aiSummary,
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.grey, height: 1.4),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if (!isDone && !isFailed) ...[
-                const SizedBox(height: 10),
-                const LinearProgressIndicator(
-                  color: _green,
-                  backgroundColor: Color(0xFFE8F5E9),
-                  minHeight: 3,
-                ),
-                const SizedBox(height: 6),
-                const Text('AI가 포스팅을 생성하는 중입니다...',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
-              ],
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.schedule, size: 12, color: Colors.grey),
-                  const SizedBox(width: 3),
-                  Text(date, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                  if (filesCount > 0) ...[
-                    const SizedBox(width: 10),
-                    const Icon(Icons.photo_library_outlined,
-                        size: 12, color: Colors.grey),
-                    const SizedBox(width: 3),
-                    Text('$filesCount장',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                  ],
+                  // 발행하기 버튼 (done 상태)
                   if (isDone) ...[
-                    const Spacer(),
-                    const Text('포스팅 보기 →',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: _green,
-                            fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('포스팅 발행하기',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: 0,
+                        ),
+                        onPressed: () => _openCaseDetail(c),
+                      ),
+                    ),
                   ],
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -424,6 +460,7 @@ class _OutputsTabState extends State<OutputsTab>
   }
 
   void _showCaseDetailSheet(Map<String, dynamic> c) {
+    final files = (c['files'] as List?) ?? [];
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -433,8 +470,8 @@ class _OutputsTabState extends State<OutputsTab>
       ),
       builder: (_) => DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
+        initialChildSize: 0.65,
+        maxChildSize: 0.95,
         builder: (_, ctrl) => ListView(
           controller: ctrl,
           padding: const EdgeInsets.all(20),
@@ -477,6 +514,40 @@ class _OutputsTabState extends State<OutputsTab>
               const SizedBox(height: 4),
               Text(c['ai_summary'] as String,
                   style: const TextStyle(fontSize: 14, height: 1.5)),
+            ],
+            // 제출 이미지 목록
+            if (files.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('제출 이미지',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 100,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: files.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, i) {
+                    final f = files[i] as Map<String, dynamic>;
+                    final url = f['url'] as String? ?? '';
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: CachedNetworkImage(
+                        imageUrl: url,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          width: 100, height: 100,
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.broken_image,
+                              color: Colors.grey),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
             if (c['raw_content'] != null) ...[
               const SizedBox(height: 16),
