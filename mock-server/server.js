@@ -199,6 +199,7 @@ const DEFAULT_CASES = [
     ai_status: 'done',
     ai_title: '65세에도 성공적인 임플란트 — 골유착 3개월 완성 사례',
     ai_summary: '고령 환자의 임플란트 성공 사례로 골밀도 검사부터 최종 보철까지의 전 과정을 담았습니다.',
+    post_id: 1,
     files: [],
     created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
   },
@@ -1878,6 +1879,7 @@ app.get('/api/case', (req, res) => {
       ai_status:   c.ai_status,
       ai_title:    c.ai_title,
       ai_summary:  c.ai_summary,
+      post_id:     c.post_id ?? null,
       files:       c.files,
       created_at:  c.created_at,
     }));
