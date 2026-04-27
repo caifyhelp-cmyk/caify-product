@@ -50,7 +50,7 @@ try {
         }
 
         $stmt = $pdo->prepare(
-            'SELECT id, case_title, raw_content, ai_status, ai_title, ai_summary, created_at
+            'SELECT id, case_title, raw_content, ai_status, ai_title, ai_summary, post_id, created_at
              FROM caify_case
              WHERE member_pk = :pk AND status = 1
              ORDER BY created_at DESC'
@@ -104,6 +104,7 @@ try {
                 'ai_status'   => $status,
                 'ai_title'    => $r['ai_title'],
                 'ai_summary'  => $r['ai_summary'],
+                'post_id'     => $r['post_id'] ? (int)$r['post_id'] : null,
                 'files'       => $filesMap[$cid] ?? [],
                 'created_at'  => $r['created_at'],
             ];

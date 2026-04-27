@@ -86,12 +86,12 @@ try {
 
     $insertId = (int)$pdo->lastInsertId();
 
-    // 사례형 워크플로우: case_id 있으면 caify_case.ai_status 를 done으로 업데이트
+    // 사례형 워크플로우: case_id 있으면 caify_case.ai_status='done' + post_id 연결
     if ($caseId > 0) {
         try {
             $pdo->prepare(
-                'UPDATE caify_case SET ai_status = :st WHERE id = :id'
-            )->execute([':st' => 'done', ':id' => $caseId]);
+                'UPDATE caify_case SET ai_status = :st, post_id = :pid WHERE id = :id'
+            )->execute([':st' => 'done', ':pid' => $insertId, ':id' => $caseId]);
         } catch (Throwable $ue) {
             // best-effort: ai_posts 저장은 성공했으므로 무시
         }

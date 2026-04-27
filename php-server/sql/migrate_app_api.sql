@@ -54,10 +54,11 @@ CREATE TABLE IF NOT EXISTS caify_rank (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── 5. caify_case 기존 테이블에 누락 컬럼 추가 ──────────────────
--- status 컬럼이 없으면 추가 (기존 웹 PHP가 이미 사용 중)
--- app_case.php는 status=1 조건으로 조회하므로 반드시 필요
+-- status: 기존 웹 PHP가 이미 사용 중 (app_case.php도 status=1 조건 사용)
+-- post_id: n8n 완료 후 ai_posts 연결 (index.php가 업데이트)
 ALTER TABLE caify_case
-  ADD COLUMN IF NOT EXISTS status TINYINT(1) NOT NULL DEFAULT 1;
+  ADD COLUMN IF NOT EXISTS status  TINYINT(1)   NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS post_id INT UNSIGNED DEFAULT NULL;
 
 -- ── 6. caify_case_file 테이블 확인용 (이미 있으면 무시) ──────────
 -- 기존 PHP prompt/case_submit.php가 이미 이 테이블 사용 중이므로 존재할 가능성 높음

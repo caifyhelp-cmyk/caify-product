@@ -382,19 +382,43 @@ class _OutputsTabState extends State<OutputsTab>
     );
   }
 
-  void _openCaseDetail(Map<String, dynamic> c) {
-    // done 케이스에 연결된 포스팅이 있으면 포스팅 화면 열기
+  Future<void> _openCaseDetail(Map<String, dynamic> c) async {
     final postId = c['post_id'];
+
     if (postId != null) {
-      final postItem = _outputs.firstWhere(
+      // _outputs에서 먼저 찾기
+      final found = _outputs.firstWhere(
         (o) => o['id'].toString() == postId.toString(),
         orElse: () => <String, dynamic>{},
       );
-      if (postItem.isNotEmpty) {
-        _openPost(postItem);
+      if (found.isNotEmpty) {
+        _openPost(found);
+        return;
+      }
+
+      // _outputs에 없으면 API로 직접 조회
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator(color: _green)),
+      );
+      final res = await ApiService.fetchOutputs();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
+
+      final items = List<Map<String, dynamic>>.from(res['items'] ?? []);
+      final fresh = items.firstWhere(
+        (o) => o['id'].toString() == postId.toString(),
+        orElse: () => <String, dynamic>{},
+      );
+      if (fresh.isNotEmpty) {
+        setState(() => _outputs = items);
+        _openPost(fresh);
         return;
       }
     }
+
     // 연결된 포스팅 없으면 사례 상세 모달
     _showCaseDetailSheet(c);
   }
