@@ -114,9 +114,17 @@ caify-product/                         ← GitHub: caifyhelp-cmyk/caify-product
 #### 캐시 전략
 keyword 단위 캐시 유지 (키워드 지식은 업체 무관 공유 가능)
 
+#### 버그 수정 (2026-04-27) — 리서치 결과 파싱 누락
+**`리서치 결과 파싱` 노드에 `_research_available` 플래그 미포함 버그**
+- `LLM 요청 준비`가 `_research_available`을 참조하는데 해당 노드가 이를 반환하지 않아
+  항상 `undefined` → `!undefined === true` → "사전 조사 결과 없음" 경고 출력
+- `content.slice(0, 1500)` → `slice(0, 2000)` 도 함께 수정
+- 패치 스크립트: `n8n-patches/patch_research_parse_fix.py`
+
 ### 관련 파일
 - `n8n-patches/patch_keyword_pool_v3.py` — 키워드풀 v3 패치
 - `n8n-patches/patch_rag_v1.py` — RAG v1 패치 스크립트
+- `n8n-patches/patch_research_parse_fix.py` — 리서치 파싱 버그 수정 패치
 - `n8n-patches/test_keyword_pool.py` — 일반 5케이스 테스트
 - `n8n-patches/test_keyword_extra.py` — 특수 2케이스 테스트
 - `키워드풀_반영.json` — 최신 워크플로우 (로컬 전용, API 키 포함, gitignore)
