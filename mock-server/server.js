@@ -73,7 +73,7 @@ function saveDb() {
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(DB_FILE, JSON.stringify(
-      { posts, messages, nextPostId, nextMsgId, publishQueue, nextQueueId, cases, nextCaseId }, null, 2));
+      { posts, messages, nextPostId, nextMsgId, publishQueue, nextQueueId, cases, nextCaseId, memberWorkflows }, null, 2));
   } catch (e) {
     console.warn('[db] 파일 저장 실패:', e.message);
   }
@@ -1342,7 +1342,7 @@ app.patch('/api/naver-blog', (req, res) => {
 // POST /api/workflow/modify              → body { member_pk, instruction } → { ok, message }
 // ════════════════════════════════════════════════════════════════
 
-const memberWorkflows = {
+const memberWorkflows = savedDb?.memberWorkflows ?? {
   1: {
     provisioned: true,
     keywords: ['임플란트', '스케일링'],
@@ -1357,7 +1357,7 @@ const memberWorkflows = {
   },
 };
 
-app.get('/api/workflow', (req, res) => {
+app.get('/api/workflow', async (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
   const pk = parseInt(req.query.member_pk || member.id, 10);
@@ -1365,10 +1365,28 @@ app.get('/api/workflow', (req, res) => {
     return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
   const wf = memberWorkflows[pk];
   if (!wf) return res.json({ ok: true, provisioned: false, workflows: [], keywords: [], schedule: null });
+
+  // n8n에서 실제 active 상태 동기화
+  const { N8N_URL, N8N_API_KEY } = n8nCfg;
+  if (N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+    await Promise.all(wf.workflows.map(async (w) => {
+      if (!w.workflow_id || w.workflow_id.startsWith('mock-') || w.workflow_id.startsWith('err-') || w.workflow_id.startsWith('wf_')) return;
+      try {
+        const r = await fetch(`${N8N_URL}/api/v1/workflows/${w.workflow_id}`, {
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        });
+        const data = await r.json();
+        if (typeof data.active === 'boolean') w.active = data.active;
+      } catch (e) {
+        console.warn(`[workflow/get] n8n sync 실패 (${w.workflow_id}):`, e.message);
+      }
+    }));
+  }
+
   res.json({ ok: true, ...wf });
 });
 
-app.post('/api/workflow/provision', (req, res) => {
+app.post('/api/workflow/provision', async (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
   const pk = parseInt(req.body.member_pk || member.id, 10);
@@ -1382,20 +1400,67 @@ app.post('/api/workflow/provision', (req, res) => {
     ? prompt.product_name.split('/').map(k => k.trim()).filter(Boolean)
     : [];
 
-  const workflows = ['case', 'info', 'promo', 'plusA'].map(type => ({
-    type,
-    name: `${pk} ${name} - ${type}`,
-    active: type !== 'promo',
-    workflow_id: `wf_${type}_${pk}_${Date.now()}`,
-  }));
+  const { N8N_URL, N8N_API_KEY, TEMPLATE_IDS } = n8nCfg;
+  const workflow_ids = {};
+  const workflows = [];
+
+  if (N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+    for (const type of WORKFLOW_TYPES) {
+      try {
+        const templateId = TEMPLATE_IDS[type];
+        if (!templateId) { workflow_ids[type] = `no-template-${type}`; workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: false, workflow_id: `no-template-${type}` }); continue; }
+
+        const tRes = await fetch(`${N8N_URL}/api/v1/workflows/${templateId}`, {
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        });
+        const template = await tRes.json();
+
+        const cRes = await fetch(`${N8N_URL}/api/v1/workflows`, {
+          method: 'POST',
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `[${pk}] ${name} - ${type}`,
+            nodes: template.nodes,
+            connections: template.connections,
+            settings: template.settings,
+          }),
+        });
+        const created = await cRes.json();
+        workflow_ids[type] = created.id;
+
+        const shouldActivate = type !== 'promo';
+        if (shouldActivate) {
+          await fetch(`${N8N_URL}/api/v1/workflows/${created.id}/activate`, {
+            method: 'POST',
+            headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+          });
+        }
+        workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: shouldActivate, workflow_id: created.id });
+      } catch (e) {
+        console.error(`[workflow/provision] ${type} 실패:`, e.message);
+        workflow_ids[type] = `err-${type}`;
+        workflows.push({ type, name: `[${pk}] ${name} - ${type}`, active: false, workflow_id: `err-${type}` });
+      }
+    }
+  } else {
+    for (const type of WORKFLOW_TYPES) {
+      const wfId = `mock-${pk}-${type}-${Date.now()}`;
+      workflow_ids[type] = wfId;
+      workflows.push({ type, name: `${pk} ${name} - ${type}`, active: type !== 'promo', workflow_id: wfId });
+    }
+    console.log('[workflow/provision] N8N 미설정 — mock ID 사용');
+  }
 
   memberWorkflows[pk] = { provisioned: true, keywords, workflows, schedule: '월·수·금 오전 10시', last_modified: null };
+  if (info) info.n8n_workflow_ids = workflow_ids;
+  saveDb();
+
   console.log(` [workflow/provision] member=${pk} name="${name}"`);
   res.json({ ok: true, message: `워크플로우 4개 생성됨 (${name})`, workflows });
 });
 
 // POST /api/workflow/update — 직접 필드 수정 (키워드/스케줄/워크플로우 활성화)
-app.post('/api/workflow/update', (req, res) => {
+app.post('/api/workflow/update', async (req, res) => {
   const member = getMemberByToken(req);
   if (!member) return res.status(401).json({ ok: false, error: '인증이 필요합니다.' });
   const pk = parseInt(req.body.member_pk || member.id, 10);
@@ -1419,6 +1484,25 @@ app.post('/api/workflow/update', (req, res) => {
   }
   wf.last_modified = new Date().toISOString();
   saveDb();
+
+  // n8n activate/deactivate 동기화
+  const { N8N_URL, N8N_API_KEY } = n8nCfg;
+  if (Array.isArray(req.body.workflows) && N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+    await Promise.all(req.body.workflows.map(async ({ type, active }) => {
+      const target = wf.workflows.find(w => w.type === type);
+      if (!target?.workflow_id || target.workflow_id.startsWith('mock-') || target.workflow_id.startsWith('err-') || target.workflow_id.startsWith('wf_')) return;
+      const endpoint = active ? 'activate' : 'deactivate';
+      try {
+        await fetch(`${N8N_URL}/api/v1/workflows/${target.workflow_id}/${endpoint}`, {
+          method: 'POST',
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        });
+        console.log(` [workflow/update] n8n ${endpoint} wf=${target.workflow_id}`);
+      } catch (e) {
+        console.warn(` [workflow/update] n8n ${endpoint} 실패 (${target.workflow_id}):`, e.message);
+      }
+    }));
+  }
 
   console.log(` [workflow/update] member=${pk} keywords=${JSON.stringify(wf.keywords)} schedule="${wf.schedule}"`);
   res.json({ ok: true, message: '워크플로우가 저장됐습니다.' });
@@ -1687,32 +1771,54 @@ app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
   cases.push(caseItem);
   saveDb();
 
-  // n8n case 워크플로우 트리거 (mock: 3초 후 pending→done 시뮬레이션)
+  // n8n case 워크플로우 실행
   const caseWf = memberWorkflows[pk]?.workflows?.find(w => w.type === 'case');
+  const { N8N_URL, N8N_API_KEY } = n8nCfg;
+  const isRealWf = caseWf?.workflow_id && !caseWf.workflow_id.startsWith('mock-') && !caseWf.workflow_id.startsWith('err-') && !caseWf.workflow_id.startsWith('wf_');
   console.log(` [case/submit] id=${caseItem.id} member=${pk} wf=${caseWf?.workflow_id ?? 'none'}`);
 
-  setTimeout(() => {
-    const c = cases.find(x => x.id === caseItem.id);
-    if (c && c.ai_status === 'pending') {
-      c.ai_status  = 'done';
-      c.ai_title   = `[AI] ${caseTitle}`;
-      c.ai_summary = `${rawContent.substring(0, 60)}... (AI 요약)`;
-      saveDb();
-      // 채팅 알림
-      messages.push({
-        id: nextMsgId++, member_pk: pk,
-        type: 'case.done', is_system: true,
-        text: `✅ 사례형 포스팅이 완성됐습니다!\n\n"${caseTitle}"\n\n산출물 탭에서 확인하세요.`,
-        post_id: null, post_title: null, post_html: null,
-        meta: { case_id: c.id },
-        actions: [{ label: '산출물 보기', action_key: 'view_outputs' }],
-        read: false, created_at: new Date().toISOString(),
-      });
-      nextMsgId++;
-      saveDb();
-      console.log(` [case/done] id=${caseItem.id}`);
-    }
-  }, 3000);
+  if (isRealWf && N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+    fetch(`${N8N_URL}/api/v1/workflows/${caseWf.workflow_id}/execute`, {
+      method: 'POST',
+      headers: { 'X-N8N-API-KEY': N8N_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        data: [{ json: {
+          case_id:     caseItem.id,
+          member_pk:   pk,
+          case_title:  caseTitle,
+          raw_content: rawContent,
+          files:       caseItem.files,
+        }}],
+      }),
+    }).then(r => r.json()).then(result => {
+      console.log(` [case/submit] n8n execute 완료: wf=${caseWf.workflow_id} result=${JSON.stringify(result).substring(0, 100)}`);
+    }).catch(e => {
+      console.error(` [case/submit] n8n execute 실패:`, e.message);
+    });
+  } else {
+    // mock: 3초 후 pending→done 시뮬레이션
+    setTimeout(() => {
+      const c = cases.find(x => x.id === caseItem.id);
+      if (c && c.ai_status === 'pending') {
+        c.ai_status  = 'done';
+        c.ai_title   = `[AI] ${caseTitle}`;
+        c.ai_summary = `${rawContent.substring(0, 60)}... (AI 요약)`;
+        saveDb();
+        messages.push({
+          id: nextMsgId++, member_pk: pk,
+          type: 'case.done', is_system: true,
+          text: `✅ 사례형 포스팅이 완성됐습니다!\n\n"${caseTitle}"\n\n산출물 탭에서 확인하세요.`,
+          post_id: null, post_title: null, post_html: null,
+          meta: { case_id: c.id },
+          actions: [{ label: '산출물 보기', action_key: 'view_outputs' }],
+          read: false, created_at: new Date().toISOString(),
+        });
+        nextMsgId++;
+        saveDb();
+        console.log(` [case/done] id=${caseItem.id} (mock)`);
+      }
+    }, 3000);
+  }
 
   res.status(201).json({
     ok:      true,
