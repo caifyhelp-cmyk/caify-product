@@ -1835,29 +1835,36 @@ app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
   console.log(` [case/submit] id=${caseItem.id} member=${pk} wf=${caseWf?.workflow_id ?? 'none'}`);
 
   if (isRealWf && N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
-    fetch(`${N8N_URL}/api/v1/workflows/${caseWf.workflow_id}/execute`, {
+    // /execute API는 executeWorkflowTrigger 워크플로우에 미지원 → webhook으로 우회
+    const webhookPath = n8nCfg.CASE_WEBHOOK_PATH;
+    const webhookWfId = n8nCfg.CASE_WEBHOOK_WF_ID;
+    fetch(`${N8N_URL}/webhook/${webhookPath}`, {
       method: 'POST',
-      headers: { 'X-N8N-API-KEY': N8N_API_KEY, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        data: [{ json: {
-          case_id:     caseItem.id,
-          member_pk:   pk,
-          case_title:  caseTitle,
-          raw_content: rawContent,
-          files:       caseItem.files,
-        }}],
+        case_id:     caseItem.id,
+        member_pk:   pk,
+        case_title:  caseTitle,
+        raw_content: rawContent,
+        files:       caseItem.files,
       }),
     }).then(r => r.json()).then(result => {
-      const executionId = result?.data?.executionId ?? result?.executionId;
-      if (executionId) {
-        const c = cases.find(x => x.id === caseItem.id);
-        if (c) { c.execution_id = executionId; saveDb(); }
-        console.log(` [case/submit] n8n execute 완료: wf=${caseWf.workflow_id} executionId=${executionId}`);
-      } else {
-        console.log(` [case/submit] n8n execute 완료 (executionId 없음): ${JSON.stringify(result).substring(0, 100)}`);
-      }
+      console.log(` [case/submit] webhook 실행: ${result?.message ?? JSON.stringify(result).substring(0, 80)}`);
+      // 2초 후 최신 executionId 조회 (webhook은 즉시 ID를 반환하지 않음)
+      setTimeout(() => {
+        fetch(`${N8N_URL}/api/v1/executions?workflowId=${webhookWfId}&limit=1`, {
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+        }).then(r => r.json()).then(execData => {
+          const executionId = execData.data?.[0]?.id;
+          if (executionId) {
+            const c = cases.find(x => x.id === caseItem.id);
+            if (c) { c.execution_id = executionId; c.n8n_workflow_id = webhookWfId; saveDb(); }
+            console.log(` [case/submit] executionId=${executionId} wfId=${webhookWfId}`);
+          }
+        }).catch(e => console.error(` [case/submit] executionId 조회 실패:`, e.message));
+      }, 2000);
     }).catch(e => {
-      console.error(` [case/submit] n8n execute 실패:`, e.message);
+      console.error(` [case/submit] webhook 실패:`, e.message);
     });
   } else {
     // mock: 단계별 진행률 시뮬레이션 → 3초 후 완료
@@ -1947,7 +1954,8 @@ app.get('/api/case/:id/status', async (req, res) => {
   // n8n execution 실시간 조회
   const { N8N_URL, N8N_API_KEY } = n8nCfg;
   const caseWf = memberWorkflows[c.member_pk]?.workflows?.find(w => w.type === 'case');
-  const wfId = caseWf?.workflow_id;
+  // c.n8n_workflow_id: webhook으로 실행한 경우 실제 실행 워크플로우 ID 저장됨
+  const wfId = c.n8n_workflow_id ?? n8nCfg.CASE_WEBHOOK_WF_ID ?? caseWf?.workflow_id;
 
   if (N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N') && wfId) {
     try {

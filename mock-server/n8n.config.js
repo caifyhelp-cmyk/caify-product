@@ -20,6 +20,11 @@ module.exports = {
     case:  'vUlrwTSj0b3TcIKg',  // 서브워크플로우(사례/후기형)
   },
 
+  // 웹훅 기반 직접 트리거 ID (사례-홈페이지연동_0427 — 웹훅 URL 직접 호출)
+  // /execute API가 executeWorkflowTrigger에 미지원이므로 웹훅으로 우회
+  CASE_WEBHOOK_PATH: '629f30cb-f932-4330-92c5-752cc28febc3',
+  CASE_WEBHOOK_WF_ID: 'yzOD6jJExSWlBi84',
+
   // Queue Worker ID (라우팅 연결용 — provision 시 플레이스홀더 교체)
   QUEUE_WORKER_IDS: [
     'bUXjHTh7xEecPuOr',  // CAIFY_QUEUE_WORKER1
