@@ -1830,26 +1830,49 @@ app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
       console.error(` [case/submit] n8n execute 실패:`, e.message);
     });
   } else {
-    // mock: 3초 후 pending→done 시뮬레이션
+    // mock: 3초 후 pending→done 시뮬레이션 + ai_posts 연결
     setTimeout(() => {
       const c = cases.find(x => x.id === caseItem.id);
       if (c && c.ai_status === 'pending') {
+        const aiTitle   = `[AI] ${caseTitle}`;
+        const aiSummary = `${rawContent.substring(0, 60)}... (AI 요약)`;
+        const aiHtml    = `<h2>${aiTitle}</h2><p>${rawContent}</p><p>${aiSummary}</p>`;
+
+        // ai_posts에 새 포스팅 추가 (index.php와 동일 역할)
+        const newPost = {
+          id:             nextPostId++,
+          customer_id:    pk,
+          prompt_id:      null,
+          prompt_node_id: 'case',
+          title:          aiTitle,
+          subject:        caseTitle,
+          intro:          aiSummary,
+          html:           aiHtml,
+          naver_html:     `<div class="se-main-container"><p>${rawContent}</p></div>`,
+          tags:           [],
+          status:         1,
+          posting_date:   null,
+          created_at:     new Date().toISOString(),
+        };
+        posts.push(newPost);
+
+        // caify_case.post_id 업데이트
         c.ai_status  = 'done';
-        c.ai_title   = `[AI] ${caseTitle}`;
-        c.ai_summary = `${rawContent.substring(0, 60)}... (AI 요약)`;
+        c.ai_title   = aiTitle;
+        c.ai_summary = aiSummary;
+        c.post_id    = newPost.id;
         saveDb();
         messages.push({
           id: nextMsgId++, member_pk: pk,
           type: 'case.done', is_system: true,
-          text: `✅ 사례형 포스팅이 완성됐습니다!\n\n"${caseTitle}"\n\n산출물 탭에서 확인하세요.`,
-          post_id: null, post_title: null, post_html: null,
+          text: `✅ 사례형 포스팅이 완성됐습니다!\n\n"${aiTitle}"\n\n산출물 탭에서 확인하세요.`,
+          post_id: newPost.id, post_title: aiTitle, post_html: aiHtml,
           meta: { case_id: c.id },
           actions: [{ label: '산출물 보기', action_key: 'view_outputs' }],
           read: false, created_at: new Date().toISOString(),
         });
-        nextMsgId++;
         saveDb();
-        console.log(` [case/done] id=${caseItem.id} (mock)`);
+        console.log(` [case/done] id=${caseItem.id} post_id=${newPost.id} (mock)`);
       }
     }, 3000);
   }
