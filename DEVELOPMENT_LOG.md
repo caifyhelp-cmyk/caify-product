@@ -121,10 +121,41 @@ keyword 단위 캐시 유지 (키워드 지식은 업체 무관 공유 가능)
 - `content.slice(0, 1500)` → `slice(0, 2000)` 도 함께 수정
 - 패치 스크립트: `n8n-patches/patch_research_parse_fix.py`
 
+### v5 업데이트 (2026-04-27) — 고객 마케팅 프로파일 + 차별화 강화
+
+#### 배경
+- 풀 있을 때 비즈니스 리서치 스킵 → `_biz_research` 블로그 프롬프트 미전달 버그
+- 키워드 선택이 랜덤 → 고객 특성 미반영
+- 동종업계 100개 기업이 같은 키워드로 써도 중복 판정 안 나게 차별화 필요
+
+#### 변경 내용
+
+1. **비즈니스 리서치 위치 변경** — 풀 체크 앞으로 이동 (항상 실행)
+   - `가중치부여1` → `비즈니스 리서치 준비` → ... → `풀 메타 조회` 순서로 재배치
+   - 풀 유무와 무관하게 `_biz_research` 항상 확보
+
+2. **스마트 키워드 선택** — 랜덤 → 컨텍스트 기반 스코어링
+   - `_biz_research` + `product_strengths` + `industry` 핵심 단어 빈도 분석
+   - 키워드 토큰과 매칭 스코어 높은 것 우선 선택
+
+3. **고객 마케팅 프로파일 노드** (3개 추가)
+   - `마케팅 프로파일 준비` → `마케팅 프로파일 생성`(Claude haiku) → `마케팅 프로파일 파싱`
+   - 출력: `sentence_style`, `structure_bias`, `key_angles`, `target_reader`, `emphasis_guide`, `expression_guide`
+   - `Merge (지식)` → 프로파일 노드 → `프롬프트생성1` 으로 연결
+
+4. **`프롬프트생성1` + `검색의도_H2생성` 프로파일 주입**
+   - SYSTEM_PROMPT: 문장 스타일·구조·강조·표현 패턴 고객별 동적 주입
+   - USER_PROMPT: `[이 글의 독자]` + `[이 업체만의 각도]` 섹션 추가
+   - `검색의도_H2생성`: 업체 구조 방향·독자·각도 기반 H2 생성
+
+#### 결과
+같은 키워드라도 각 고객의 업체 특성에서 H2·문장·표현이 자연스럽게 분기됨
+
 ### 관련 파일
 - `n8n-patches/patch_keyword_pool_v3.py` — 키워드풀 v3 패치
 - `n8n-patches/patch_rag_v1.py` — RAG v1 패치 스크립트
 - `n8n-patches/patch_research_parse_fix.py` — 리서치 파싱 버그 수정 패치
+- `n8n-patches/patch_marketing_profile.py` — 마케팅 프로파일 + 차별화 패치
 - `n8n-patches/test_keyword_pool.py` — 일반 5케이스 테스트
 - `n8n-patches/test_keyword_extra.py` — 특수 2케이스 테스트
 - `키워드풀_반영.json` — 최신 워크플로우 (로컬 전용, API 키 포함, gitignore)
