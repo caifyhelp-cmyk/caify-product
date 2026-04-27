@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'chat_screen.dart';
-import 'post_list_screen.dart';
+import 'outputs_tab.dart';
 import 'workflow_screen.dart';
 import 'rank_screen.dart';
 import 'settings_screen.dart';
@@ -27,7 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const _pages = <Widget>[
     ChatScreen(),
-    PostListScreen(),
+    OutputsTab(),
     WorkflowScreen(),
     RankScreen(),
     SettingsScreen(),
@@ -52,9 +52,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: '채팅',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.article_outlined),
-            activeIcon: Icon(Icons.article),
-            label: '포스팅',
+            icon: Icon(Icons.inventory_2_outlined),
+            activeIcon: Icon(Icons.inventory_2),
+            label: '산출물',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.account_tree_outlined),

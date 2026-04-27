@@ -26,7 +26,7 @@ class _OutputsTabState extends State<OutputsTab>
   @override
   void initState() {
     super.initState();
-    _sub = TabController(length: 2, vsync: this);
+    _sub = TabController(length: 3, vsync: this);
     _loadAll();
   }
 
@@ -79,6 +79,7 @@ class _OutputsTabState extends State<OutputsTab>
             tabs: [
               Tab(text: 'AI 포스팅 (${_outputs.length})'),
               Tab(text: '내 사례 (${_cases.length})'),
+              const Tab(text: '영상'),
             ],
           ),
         ),
@@ -88,6 +89,7 @@ class _OutputsTabState extends State<OutputsTab>
             children: [
               _buildOutputs(),
               _buildCases(),
+              _buildVideos(),
             ],
           ),
         ),
@@ -341,6 +343,13 @@ class _OutputsTabState extends State<OutputsTab>
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
       child: Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _buildVideos() {
+    return _buildEmpty(
+      icon: Icons.videocam_outlined,
+      message: '영상 기능을 준비 중입니다.\n곧 업데이트될 예정이에요.',
     );
   }
 

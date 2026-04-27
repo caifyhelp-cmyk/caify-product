@@ -12,6 +12,7 @@ class WorkflowScreen extends StatefulWidget {
 
 class _WorkflowScreenState extends State<WorkflowScreen> {
   Map<String, dynamic>? _data;
+  Map<String, dynamic>? _weeklyStats;
   bool _loading = true;
   bool _saving   = false;
   bool _provisioning = false;
@@ -51,6 +52,7 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
         _workflows = List<Map<String, dynamic>>.from(
           (data['workflows'] as List?)?.map((e) => Map<String, dynamic>.from(e)) ?? [],
         );
+        _weeklyStats = data['weekly_stats'] as Map<String, dynamic>?;
       }
     });
     if (data == null) AppLogger.warn('WF_UI', '워크플로우 데이터 null');
@@ -210,6 +212,12 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
             ),
           ),
 
+          // ── 주간 발행 현황 ───────────────────────────────────────
+          if (_weeklyStats != null) ...[
+            const SizedBox(height: 16),
+            _buildWeeklyStats(),
+          ],
+
           const SizedBox(height: 20),
 
           // ── 발행 요일 ─────────────────────────────────────────
@@ -350,6 +358,74 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
       ),
     ),
   );
+
+  Widget _buildWeeklyStats() {
+    final stats = _weeklyStats!;
+    final postsThisWeek  = stats['posts_this_week']  as int? ?? 0;
+    final postsScheduled = stats['posts_scheduled']  as int? ?? 0;
+    final casesThisWeek  = stats['cases_this_week']  as int? ?? 0;
+
+    final hasMixed = _workflows.any((w) => w['type'] == 'mixed' && w['active'] == true);
+    final hasCase  = _workflows.any((w) => w['type'] == 'case'  && w['active'] == true);
+
+    if (!hasMixed && !hasCase) return const SizedBox.shrink();
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: const Color(0xFFF0FBF4),
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.bar_chart, size: 15, color: Color(0xFF03C75A)),
+                SizedBox(width: 6),
+                Text('이번 주 현황',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF03C75A))),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (hasMixed) ...[
+                  _statChip(Icons.auto_awesome_outlined, '발행완료', '$postsThisWeek건'),
+                  const SizedBox(width: 10),
+                  _statChip(Icons.schedule, '발행예정', '$postsScheduled건'),
+                ],
+                if (hasMixed && hasCase) const SizedBox(width: 10),
+                if (hasCase)
+                  _statChip(Icons.medical_services_outlined, '사례제출', '$casesThisWeek건'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statChip(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFB2DFCC)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: const Color(0xFF03C75A)),
+          const SizedBox(width: 5),
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(width: 4),
+          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
+        ],
+      ),
+    );
+  }
 
   Widget _sectionTitle(String text) => Text(
     text, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),

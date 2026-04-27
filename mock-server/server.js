@@ -1382,7 +1382,33 @@ app.get('/api/workflow', async (req, res) => {
     }));
   }
 
-  res.json({ ok: true, ...wf });
+  // 주간 발행 현황 계산
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay()); // 이번 주 일요일
+  weekStart.setHours(0, 0, 0, 0);
+
+  const postsThisWeek = posts.filter(p =>
+    p.customer_id === pk && p.posting_date &&
+    new Date(p.posting_date) >= weekStart
+  ).length;
+
+  const scheduledThisWeek = publishQueue.filter(q =>
+    q.member_pk === pk && q.publish_date &&
+    new Date(q.publish_date) >= weekStart && q.status === 'pending'
+  ).length;
+
+  const casesThisWeek = cases.filter(c =>
+    c.member_pk === pk && new Date(c.created_at) >= weekStart
+  ).length;
+
+  const weekly_stats = {
+    posts_this_week:  postsThisWeek,
+    posts_scheduled:  scheduledThisWeek,
+    cases_this_week:  casesThisWeek,
+  };
+
+  res.json({ ok: true, ...wf, weekly_stats });
 });
 
 app.post('/api/workflow/provision', async (req, res) => {
