@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import '../services/update_service.dart';
 import 'log_viewer_screen.dart';
 import 'naver_link_screen.dart';
 
@@ -19,11 +21,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _testing       = false;
   String? _blogId;
   bool _blogIdLoading = false;
+  String _appVersion  = '';
 
   @override
   void initState() {
     super.initState();
     _loadConfig();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = info.version);
+    });
   }
 
   Future<void> _loadConfig() async {
@@ -235,6 +241,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('초기화'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 16),
+
+            // ── 앱 버전 ──────────────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('앱 버전 v$_appVersion',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                TextButton(
+                  onPressed: () => UpdateService.checkAndPrompt(context),
+                  child: const Text('업데이트 확인',
+                      style: TextStyle(color: Color(0xFF03C75A), fontSize: 13)),
                 ),
               ],
             ),
