@@ -30,6 +30,62 @@ caify-product/                         ← GitHub: caifyhelp-cmyk/caify-product
 
 ---
 
+## n8n 워크플로우 — 키워드풀 반영 (키워드풀_반영.json)
+
+**워크플로우 ID**: `daUM2xPEVyBhbyez`  
+**파일**: `키워드풀_반영.json` (90노드, executeWorkflowTrigger, Queue Worker 서브워크플로우)
+
+### 노드 체인
+```
+비즈니스 리서치 준비 → Perplexity 비즈니스 리서치 → 리서치 결과 파싱
+→ LLM 요청 준비 → LLM 키워드 생성 → LLM 응답 파싱 → 풀 저장 (MySQL)
+```
+
+### v3 업데이트 내용 (2026-04-27)
+**핵심 변경: 키워드 생성 로직 전면 고도화**
+
+1. **Perplexity 사전 조사 강화** (`비즈니스 리서치 준비`)
+   - 타겟 고객 명시 질문 추가: 소비자/구직자/수험생/사업자 중 실제 타겟 명시 요청
+   - `goal` 필드도 Perplexity에 전달
+
+2. **리서치 결과 없음 처리** (`리서치 결과 파싱`)
+   - `_research_available` 플래그 추가 → LLM에 fallback 가이드 제공
+
+3. **LLM 자율 타겟 추론** (`LLM 요청 준비`)
+   - 기존 하드코딩(isInsurance, isAcademy) 제거 → Claude가 자율 추론
+   - 1단계: 실제 비즈니스 목적·타겟 추론 (보험 설계사 모집 vs 상품 소개 등)
+   - 2단계: 서비스·강점 추출
+   - 3단계: 키워드 파생 (타겟별 방향 반영)
+   - 4단계: 4:3:3 분류 (tier1:6 / tier2:5 / tier3:4 per slot)
+
+4. **동(洞) 단위 오프라인 키워드** (`LLM 요청 준비`)
+   - NAVER Geocoding jibunAddress에서 동 추출 우선, fallback 정규식
+   - promo tier1: `{동}+서비스명` 최소 2개 필수
+   - 도로명(로/길) 기반 키워드 사용 금지
+
+5. **업종 앵커 규칙**
+   - 키워드 안에 업종명·서비스명·지역명 중 최소 1개 포함 필수
+   - 예: "불합격 무료 재수강" ❌ → "공인중개사 학원 불합격 재수강 무료" ✅
+
+6. **롱테일(tier3) 실검 기준**
+   - 네이버 자동완성 스타일 3~5단어 명사형만 허용
+   - 구어체/문장형/조사로 끝나는 표현 금지
+   - 예: "공인중개사 독학이랑 학원이랑 합격률 차이 얼마나 나요" ❌
+   - 예: "공인중개사 독학 합격률" ✅
+
+7. **LLM 응답 파싱** — primary_target, target_reasoning DB 저장 추가
+
+### 테스트 검증 결과
+- 일반업종 5개 (헬스장, ISO인증, 유아동복, 뷰티학원, 보험GA): 모두 정상
+- 특수업종 2개 (치킨 프랜차이즈→창업희망자80%, 공인중개사 학원→수험생100%): 자율 추론 정상
+
+### 관련 파일
+- `n8n-patches/patch_keyword_pool_v3.py` — 워크플로우 JSON 패치 스크립트
+- `n8n-patches/test_keyword_pool.py` — 일반 5케이스 테스트
+- `n8n-patches/test_keyword_extra.py` — 특수 2케이스 테스트
+
+---
+
 ## APK 다운로드 URL 및 GitHub Pages
 
 - **랜딩 페이지**: `https://caifyhelp-cmyk.github.io/caify-product/`
