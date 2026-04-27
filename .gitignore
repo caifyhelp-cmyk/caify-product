@@ -24,6 +24,11 @@ android/app/release/
 *.env
 provision_*.json
 
+# n8n 워크플로우/테스트 (API 키 포함 — 로컬 전용)
+키워드풀_반영.json
+n8n-patches/test_keyword_pool.py
+n8n-patches/test_keyword_extra.py
+
 # OS
 .DS_Store
 Thumbs.db
