@@ -1960,6 +1960,58 @@ app.get('/api/outputs', (req, res) => {
   res.json({ ok: true, total, page, per_page: perPage, items });
 });
 
+// ════════════════════════════════════════════════════════════════
+// POST /api  — n8n 완료 콜백 (= 실서버 api/index.php)
+// 인증 불필요 (n8n이 직접 호출)
+// Body: { title, html, naverHtml, customer_id, prompt_id, promptNodeId,
+//         subject?, intro?, case_id? }
+// ════════════════════════════════════════════════════════════════
+
+app.post('/api', (req, res) => {
+  const { title, html, naverHtml, customer_id, prompt_id, promptNodeId, subject, intro, case_id } = req.body || {};
+
+  if (!title || !naverHtml || !customer_id || !promptNodeId) {
+    return res.status(422).json({
+      ok: false,
+      error: 'title, naverHtml, customer_id, promptNodeId are required',
+    });
+  }
+
+  const post = {
+    id:             nextPostId++,
+    customer_id:    parseInt(customer_id, 10),
+    prompt_id:      parseInt(prompt_id || '0', 10),
+    prompt_node_id: promptNodeId,
+    title,
+    subject:        subject || null,
+    intro:          intro   || null,
+    html:           html    || '',
+    naver_html:     naverHtml,
+    tags:           [],
+    status:         1,
+    posting_date:   null,
+    created_at:     new Date().toISOString(),
+  };
+
+  posts.push(post);
+
+  // case_id 있으면 caify_case 업데이트 (= index.php UPDATE caify_case)
+  const caseIdInt = parseInt(case_id || '0', 10);
+  if (caseIdInt > 0) {
+    const c = cases.find(x => x.id === caseIdInt);
+    if (c) {
+      c.ai_status = 'done';
+      c.post_id   = post.id;
+      console.log(` [/api] case_id=${caseIdInt} → post_id=${post.id} ai_status=done`);
+    }
+  }
+
+  saveDb();
+  console.log(` [/api] new post id=${post.id} customer=${customer_id} title="${title}"`);
+
+  res.json({ ok: true, message: 'Inserted successfully', insert_id: post.id });
+});
+
 // ── 서버 시작 ────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
