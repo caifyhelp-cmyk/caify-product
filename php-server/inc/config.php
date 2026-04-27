@@ -96,6 +96,15 @@ define('DB_CHARSET', 'utf8mb4');
 // n8n Webhook URL (비워두면 전송하지 않음)
 define('N8N_WEBHOOK_URL', 'https://n8n.caify.ai/webhook/4c60f500-0955-449d-9ebc-21d617d9adcb');
 
+// n8n REST API 설정 (워크플로우 관리용)
+define('N8N_URL', env_or_default('N8N_URL', 'https://n8n.caify.ai'));
+define('N8N_API_KEY', env_or_default('N8N_API_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMmNlNTVlNS01YTUwLTQyMjgtOWM5Yi1hNWM0MzBmNzM4NDEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzc2OTgyMzIzfQ.zeIagMQxIuDN-OwQHhKuATLM0CDb-dNRCLuB5zCFzGI'));
+
+// n8n 워크플로우 템플릿 ID
+define('N8N_TEMPLATE_INFO',  env_or_default('N8N_TEMPLATE_INFO',  'DvvwnamBcqnqVgCz'));
+define('N8N_TEMPLATE_MIXED', env_or_default('N8N_TEMPLATE_MIXED', 'zUhFnjJvA7Fuz6UG'));
+define('N8N_TEMPLATE_CASE',  env_or_default('N8N_TEMPLATE_CASE',  'vUlrwTSj0b3TcIKg'));
+
 // Python venv 경로 (이미지 분석용)
 // 서버에서 `which python3` (venv 활성화 후) 결과를 여기 넣으세요
 define('PYTHON_VENV_PATH', '/usr/share/nginx/html/api/env/bin/python3');
