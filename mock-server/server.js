@@ -1944,53 +1944,79 @@ app.get('/api/case/:id/status', async (req, res) => {
     return res.json({ ok: true, case_id: c.id, ai_status: 'failed', progress: 0, step: '처리 실패' });
   }
 
-  // 경과 시간 기반 진행률 (n8n 실시간 API 미지원 → 시간으로 추정)
-  // n8n 사례 워크플로우 평균 소요: ~60~120초
-  const createdAt = c.created_at ? new Date(c.created_at).getTime() : Date.now();
-  const elapsedSec = (Date.now() - createdAt) / 1000;
-
-  const timeSteps = [
-    { maxSec: 5,   progress: 10, step: '워크플로우 시작 중' },
-    { maxSec: 15,  progress: 25, step: '사례 데이터 조회 중' },
-    { maxSec: 35,  progress: 45, step: 'AI 포스팅 생성 중' },
-    { maxSec: 60,  progress: 65, step: '본문 작성 중' },
-    { maxSec: 90,  progress: 80, step: '내용 최적화 중' },
-    { maxSec: 150, progress: 90, step: '마무리 중' },
-  ];
-
-  let progress = 92;
-  let step = '잠시만 기다려주세요...';
-  for (const s of timeSteps) {
-    if (elapsedSec <= s.maxSec) { progress = s.progress; step = s.step; break; }
-  }
-
-  // n8n execution_id가 있고 완료 확인 가능하면 체크
+  // n8n execution 실시간 조회
   const { N8N_URL, N8N_API_KEY } = n8nCfg;
-  if (c.execution_id && N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N')) {
+  const caseWf = memberWorkflows[c.member_pk]?.workflows?.find(w => w.type === 'case');
+  const wfId = caseWf?.workflow_id;
+
+  if (N8N_URL && N8N_API_KEY && !N8N_URL.includes('YOUR_N8N') && wfId) {
     try {
-      const execRes = await fetch(`${N8N_URL}/api/v1/executions/${c.execution_id}`, {
-        headers: { 'X-N8N-API-KEY': N8N_API_KEY },
-        signal: AbortSignal.timeout(3000),
-      });
-      if (execRes.ok) {
-        const execData = await execRes.json();
+      let execData = null;
+
+      // 1) execution_id로 직접 조회
+      if (c.execution_id) {
+        const r = await fetch(`${N8N_URL}/api/v1/executions/${c.execution_id}`, {
+          headers: { 'X-N8N-API-KEY': N8N_API_KEY },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (r.ok) execData = await r.json();
+      }
+
+      // 2) execution_id 없거나 조회 실패 → 워크플로우 최근 실행 목록에서 찾기
+      if (!execData) {
+        const r = await fetch(
+          `${N8N_URL}/api/v1/executions?workflowId=${wfId}&limit=5`,
+          { headers: { 'X-N8N-API-KEY': N8N_API_KEY }, signal: AbortSignal.timeout(4000) }
+        );
+        if (r.ok) {
+          const list = await r.json();
+          const items = list.data ?? list ?? [];
+          // 가장 최근 running/new 실행, 없으면 첫 번째
+          const recent = items.find(e => e.status === 'running' || e.status === 'new' || e.status === 'waiting') ?? items[0];
+          if (recent) {
+            execData = recent;
+            if (!c.execution_id && recent.id) { c.execution_id = recent.id; saveDb(); }
+          }
+        }
+      }
+
+      if (execData) {
         if (execData.status === 'error') {
           return res.json({ ok: true, case_id: c.id, ai_status: 'failed', progress: 0, step: '처리 실패' });
         }
+
+        const runData = execData.data?.resultData?.runData ?? {};
+        const completedNodes = Object.keys(runData);
+        const completedCount = completedNodes.length;
+        const TOTAL = 4; // 사례 워크플로우 주요 노드 수
+        const pct = completedCount === 0 ? 15 : Math.min(Math.round((completedCount / TOTAL) * 90), 90);
+
+        const stepMap = {
+          '사례 가져오기1': '사례 데이터 조회 중',
+          'HTTP Request':  'AI 포스팅 생성 중',
+          'HTTP Request1': '결과 저장 중',
+        };
+        const lastNode = completedNodes[completedNodes.length - 1] ?? '';
+        const step = stepMap[lastNode] ?? (completedCount > 0 ? `${completedCount}/${TOTAL} 단계 완료` : 'AI 처리 중');
+
         if (execData.status === 'success') {
-          // n8n 완료됐는데 콜백이 아직 안 온 경우
-          progress = 95; step = '결과 저장 중';
+          return res.json({ ok: true, case_id: c.id, ai_status: 'pending', progress: 95, step: '결과 저장 중' });
         }
+
+        return res.json({ ok: true, case_id: c.id, ai_status: 'pending', progress: pct, step });
       }
-    } catch (e) { /* polling 실패 시 시간 기반 값 그대로 사용 */ }
+    } catch (e) {
+      console.warn('[case/status] n8n 조회 실패:', e.message);
+    }
   }
 
+  // fallback: mock 또는 n8n 미설정
   res.json({
     ok: true,
     case_id: c.id,
     ai_status: c.ai_status ?? 'pending',
-    progress,
-    step,
+    progress: c.mock_progress ?? 5,
+    step: c.mock_step ?? 'AI 처리 중...',
   });
 });
 
