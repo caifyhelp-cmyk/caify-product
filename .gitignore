@@ -42,3 +42,5 @@ php-server/env/
 php-server/upload/
 php-server/api/env/
 php-server/chat_log*.xlsx
+wf_*.json
+tmp_*.json
