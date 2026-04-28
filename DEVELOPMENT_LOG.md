@@ -151,11 +151,30 @@ keyword 단위 캐시 유지 (키워드 지식은 업체 무관 공유 가능)
 #### 결과
 같은 키워드라도 각 고객의 업체 특성에서 H2·문장·표현이 자연스럽게 분기됨
 
+### v6 업데이트 (2026-04-28) — 전문성·수치·출처 강화 + 업체명 볼드
+
+#### 변경 내용
+
+1. **Perplexity RAG 쿼리 강화**
+   - 수치·통계 수집 시 기관명·보고서명·연도 반드시 포함 요청
+   - 항목 7 추가: 업종 전문가·실무자가 쓰는 용어와 기준
+
+2. **프롬프트생성1 + 글생성 규칙 추가**
+   - 확인된 수치는 본문에 반드시 포함 + `(출처: 기관명)` 병기
+   - 전문가도 납득할 깊이 + 비전문 독자도 이해하게 풀어쓰기 동시 요구
+
+3. **NAVER REBUILD V1 — 업체명 자동 볼드**
+   - `brand_name` 등장 시 `<strong>` 자동 처리 (본문 + summary 모두)
+
+#### 패치 스크립트
+`n8n-patches/patch_depth_stats_brand.py`
+
 ### 관련 파일
 - `n8n-patches/patch_keyword_pool_v3.py` — 키워드풀 v3 패치
 - `n8n-patches/patch_rag_v1.py` — RAG v1 패치 스크립트
 - `n8n-patches/patch_research_parse_fix.py` — 리서치 파싱 버그 수정 패치
 - `n8n-patches/patch_marketing_profile.py` — 마케팅 프로파일 + 차별화 패치
+- `n8n-patches/patch_depth_stats_brand.py` — 전문성·수치·볼드 패치
 - `n8n-patches/test_keyword_pool.py` — 일반 5케이스 테스트
 - `n8n-patches/test_keyword_extra.py` — 특수 2케이스 테스트
 - `키워드풀_반영.json` — 최신 워크플로우 (로컬 전용, API 키 포함, gitignore)
