@@ -151,6 +151,92 @@ keyword 단위 캐시 유지 (키워드 지식은 업체 무관 공유 가능)
 #### 결과
 같은 키워드라도 각 고객의 업체 특성에서 H2·문장·표현이 자연스럽게 분기됨
 
+### v10 업데이트 (2026-04-28) — 이미지 파이프라인 전면 교체
+
+#### 배경
+기존 AI Agent1(Google Gemini) + fal Generate1/4 이미지 체인이 품질 및 구조 문제 발생.
+이거.txt 기반 신규 이미지 파이프라인으로 전면 교체.
+
+#### 변경 내용
+
+1. **이미지 생성 노드 교체**
+   - 제거: AI Agent1(Gemini), Google Gemini Chat Model ×3, fal Generate1/4, 전체 Retry 체인
+   - 추가: AI Agent(OpenAI), fal Generate/fal Generate3(openai/gpt-image-2), Init Retry2/3, Wait2/3, Check Status2/3, Is Completed?2/3, Get Result2/3, Extract Image2/3, Retry Counter2/3, FAIL1/3, Retry < 20?1/3, Merge All1, Collect Success Images
+
+2. **imageSkip 분기 추가**
+   - `If → imageSkip → 이미지url매칭 → 매핑` 경로 신규 추가
+   - 이미지 생성 불필요 시 스킵 가능한 구조
+
+3. **진입/출구 연결 변경**
+   - 진입: `단락별쪼개기1 → AI Agent1` → `단락별쪼개기1 → If`
+   - 출구: `매핑 → 매핑7`
+
+4. **이미지 생성 파라미터 개선**
+   - quality: medium, image_size: landscape_4_3, output_format: png
+   - 프롬프트: 텍스트 깨짐 방지 + 레이아웃 레이블 미노출 규칙 포함
+
+#### 패치 스크립트
+`n8n-patches/apply_v10_image_pipeline.py`
+
+---
+
+### v9b 업데이트 (2026-04-28) — KB 검색 non-blocking + 우선순위 로직
+
+#### 변경 내용
+1. **KB 검색 노드** — `onError: continueRegularOutput` 추가 (KB 없어도 워크플로우 계속)
+2. **글생성 프롬프트** — KB 자료 유무에 따른 조건부 우선순위:
+   - KB 있음: KB 최우선, Perplexity는 보완용
+   - KB 없음: Perplexity가 주 자료, 없는 수치·사례 생성 금지
+
+---
+
+### v9 업데이트 (2026-04-28) — GPT이미지·KB검색·글품질 전면 개선
+
+#### 변경 내용
+1. **이미지 생성**: fal Generate1/4 → openai/gpt-image-2로 통일
+2. **KB 검색 노드 추가**: 고객 업로드 자료 벡터 검색 (caify.ai/prompt/kb_n8n_search.php)
+   - 검색의도_H2생성 → KB 검색 → 글생성 체인 삽입
+3. **글생성 프롬프트 강화**:
+   - MEMBER KB CONTEXT 섹션 추가 (최우선 참고)
+   - 도입부 훅 규칙 강화 (4가지 패턴 + 금지 표현)
+   - 제목 CTR 규칙 (5가지 패턴, 교과서형 금지)
+   - 볼드 선택 → 필수 (0회 실패, 4회 이상 과잉)
+   - 구조화 배분: 번호·하이픈 리스트 최소 2회
+
+#### 패치 스크립트
+`n8n-patches/apply_v9.py`
+
+---
+
+### v8 업데이트 (2026-04-28) — 업체명 볼드 경로·수치·홍보 개선
+
+#### 변경 내용
+1. **업체명 볼드 경로 수정**: `brand_name` → `j._meta?.brandName` (camelCase, _meta 중첩)
+2. **Perplexity 검색 강화**: `sonar-pro` + `search_recency_filter: week` + 업종 컨텍스트 주입
+3. **수치 신뢰도**: 검증된 수치만 사용, 불확실 수치 제외
+4. **홍보 패턴 개선**: 부자연스러운 업체명 끼워넣기 패턴 금지
+
+#### 버그 수정
+- Perplexity 요청 준비 노드 JS 코드에 `\`` (백슬래시+백틱) 문법 오류 → 수정
+
+#### 패치 스크립트
+`n8n-patches/patch_v8_bold_stats_promo.py`
+
+---
+
+### v7 업데이트 (2026-04-28) — H2 다채롭게 + 가독성 개선 + 업체명 볼드
+
+#### 변경 내용
+1. **H2 소제목 스타일**: 6가지 유형 혼합 (질문형/반전형/숫자형/공감형/혜택형/업체특화형)
+2. **가독성**: '전문가 납득' → 독자 중심 표현으로 전환, 어려운 개념 즉시 풀어쓰기
+3. **Perplexity**: 전문가·실무자 용어 수집 항목 제거 (어려운 단어 유입 방지)
+4. **NAVER REBUILD V1**: H2 헤더 + body 라인에 boldBrand 체인 적용
+
+#### 패치 스크립트
+`n8n-patches/patch_v7_h2_readability_bold.py`
+
+---
+
 ### v6 업데이트 (2026-04-28) — 전문성·수치·출처 강화 + 업체명 볼드
 
 #### 변경 내용
