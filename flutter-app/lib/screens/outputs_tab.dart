@@ -25,6 +25,8 @@ class _OutputsTabState extends State<OutputsTab>
 
   // 진행률 polling
   final Map<int, Map<String, dynamic>> _caseProgress = {};
+  final Map<int, int> _caseFailCount = {};   // 케이스별 연속 실패 횟수
+  static const _maxFails = 5;               // 이 횟수 초과 시 polling 중단
   Timer? _pollTimer;
   final Set<int> _navigatedCases = {};
 
@@ -51,9 +53,12 @@ class _OutputsTabState extends State<OutputsTab>
   }
 
   void _startPollingIfNeeded() {
-    final hasPending = _cases.any(
-        (c) => (c['ai_status'] as String? ?? 'pending') == 'pending');
-    if (!hasPending) { _stopPolling(); return; }
+    final hasActive = _cases.any((c) {
+      final id = c['id'] as int;
+      final status = c['ai_status'] as String? ?? 'pending';
+      return status == 'pending' && (_caseFailCount[id] ?? 0) < _maxFails;
+    });
+    if (!hasActive) { _stopPolling(); return; }
     if (_pollTimer != null && _pollTimer!.isActive) return;
     _pollPendingCases();
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _pollPendingCases());
@@ -67,7 +72,11 @@ class _OutputsTabState extends State<OutputsTab>
   Future<void> _pollPendingCases() async {
     if (!mounted) { _stopPolling(); return; }
     final pending = _cases
-        .where((c) => (c['ai_status'] as String? ?? 'pending') == 'pending')
+        .where((c) {
+          final id = c['id'] as int;
+          final s  = c['ai_status'] as String? ?? 'pending';
+          return s == 'pending' && (_caseFailCount[id] ?? 0) < _maxFails;
+        })
         .toList();
 
     if (pending.isEmpty) { _stopPolling(); return; }
@@ -76,6 +85,22 @@ class _OutputsTabState extends State<OutputsTab>
       final caseId = c['id'] as int;
       final status = await ApiService.fetchCaseStatus(caseId);
       if (!mounted) return;
+
+      // 서버 응답 없음 (빈 맵) → 연속 실패 카운트
+      if (status.isEmpty) {
+        final fails = (_caseFailCount[caseId] ?? 0) + 1;
+        _caseFailCount[caseId] = fails;
+        if (fails >= _maxFails) {
+          setState(() => _caseProgress[caseId] = {
+            'progress': 0,
+            'step': '서버 연결 실패 — 새로고침 해주세요',
+          });
+          _startPollingIfNeeded();
+        }
+        continue;
+      }
+
+      _caseFailCount[caseId] = 0;
 
       final aiStatus = status['ai_status'] as String?;
       final pct      = (status['progress'] as num?)?.toInt() ?? 0;
@@ -140,6 +165,7 @@ class _OutputsTabState extends State<OutputsTab>
       setState(() {
         _cases = res;
         _loadingCases = false;
+        _caseFailCount.clear();  // 새로고침 시 실패 카운트 리셋
       });
       _startPollingIfNeeded();
     }
