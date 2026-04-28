@@ -2074,13 +2074,10 @@ app.get('/api/outputs', (req, res) => {
   if (!isAdmin(member) && pk !== member.id)
     return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
 
-  // 실서버와 동일: status=1, 2일 이상 지난 것만 (관리자는 전체)
-  const twoDaysAgo = new Date(Date.now() - 2 * 86400000);
+  // 테스트용: 기간 필터 없이 status=1인 것 전부 반환
   const filtered = posts.filter(p => {
     if (isAdmin(member)) return true;
-    return p.customer_id === pk &&
-           p.status === 1 &&
-           new Date(p.created_at) <= twoDaysAgo;
+    return p.customer_id === pk && p.status === 1;
   }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const total = filtered.length;
