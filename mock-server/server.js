@@ -2171,4 +2171,16 @@ app.listen(PORT, () => {
   console.log(' member_id: dental2 / passwd: password123');
   console.log(' member_id: admin / passwd: adminpass (관리자)');
   console.log('');
+
+  // Render 슬립 방지: RENDER_EXTERNAL_URL 환경변수가 있으면 14분마다 self-ping
+  const selfUrl = process.env.RENDER_EXTERNAL_URL;
+  if (selfUrl) {
+    const PING_INTERVAL = 14 * 60 * 1000;
+    setInterval(() => {
+      fetch(`${selfUrl}/api/version`)
+        .then(() => console.log(`[keep-alive] ping OK (${new Date().toISOString()})`))
+        .catch(e => console.warn(`[keep-alive] ping FAIL: ${e.message}`));
+    }, PING_INTERVAL);
+    console.log(` [keep-alive] 활성화 — ${selfUrl} (14분 간격)`);
+  }
 });
