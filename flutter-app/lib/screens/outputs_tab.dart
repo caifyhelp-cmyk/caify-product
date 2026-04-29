@@ -27,6 +27,7 @@ class _OutputsTabState extends State<OutputsTab>
   final Map<int, Map<String, dynamic>> _caseProgress = {};
   final Map<int, int> _caseFailCount = {};   // 케이스별 연속 실패 횟수
   static const _maxFails = 5;               // 이 횟수 초과 시 polling 중단
+  bool _isPolling = false;                  // 동시 실행 방지 가드
   Timer? _pollTimer;
   final Set<int> _navigatedCases = {};
 
@@ -70,6 +71,7 @@ class _OutputsTabState extends State<OutputsTab>
   }
 
   Future<void> _pollPendingCases() async {
+    if (_isPolling) return;   // 이전 요청 진행 중이면 skip
     if (!mounted) { _stopPolling(); return; }
     final pending = _cases
         .where((c) {
@@ -80,65 +82,67 @@ class _OutputsTabState extends State<OutputsTab>
         .toList();
 
     if (pending.isEmpty) { _stopPolling(); return; }
-
-    for (final c in pending) {
-      final caseId = c['id'] as int;
-      final status = await ApiService.fetchCaseStatus(caseId);
-      if (!mounted) return;
-
-      // 서버 응답 없음 (빈 맵) → 연속 실패 카운트
-      if (status.isEmpty) {
-        final fails = (_caseFailCount[caseId] ?? 0) + 1;
-        _caseFailCount[caseId] = fails;
-        if (fails >= _maxFails) {
-          setState(() => _caseProgress[caseId] = {
-            'progress': 0,
-            'step': '서버 연결 실패 — 새로고침 해주세요',
-          });
-          _startPollingIfNeeded();
-        }
-        continue;
-      }
-
-      _caseFailCount[caseId] = 0;
-
-      final aiStatus = status['ai_status'] as String?;
-      final pct      = (status['progress'] as num?)?.toInt() ?? 0;
-      final step     = status['step'] as String? ?? 'AI 처리 중...';
-
-      setState(() => _caseProgress[caseId] = {'progress': pct, 'step': step});
-
-      if (aiStatus == 'done' && !_navigatedCases.contains(caseId)) {
-        _navigatedCases.add(caseId);
-        await _loadCases();
+    _isPolling = true;
+    try {
+      for (final c in pending) {
+        final caseId = c['id'] as int;
+        final status = await ApiService.fetchCaseStatus(caseId);
         if (!mounted) return;
 
-        final updatedCase = _cases.firstWhere(
-          (x) => x['id'] == caseId,
-          orElse: () => <String, dynamic>{},
-        );
-        if (updatedCase.isEmpty) continue;
+        // 서버 응답 없음 (빈 맵) → 연속 실패 카운트
+        if (status.isEmpty) {
+          final fails = (_caseFailCount[caseId] ?? 0) + 1;
+          _caseFailCount[caseId] = fails;
+          if (fails >= _maxFails) {
+            setState(() => _caseProgress[caseId] = {
+              'progress': 0,
+              'step': '서버 연결 실패 — 새로고침 해주세요',
+            });
+            _startPollingIfNeeded();
+          }
+          continue;
+        }
 
-        // 스낵바 표시
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('✅ AI 포스팅 완성! 발행할 수 있어요.'),
-            backgroundColor: _green,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: '발행하기 →',
-              textColor: Colors.white,
-              onPressed: () => _openCaseDetail(updatedCase),
+        _caseFailCount[caseId] = 0;
+
+        final aiStatus = status['ai_status'] as String?;
+        final pct      = (status['progress'] as num?)?.toInt() ?? 0;
+        final step     = status['step'] as String? ?? 'AI 처리 중...';
+
+        setState(() => _caseProgress[caseId] = {'progress': pct, 'step': step});
+
+        if (aiStatus == 'done' && !_navigatedCases.contains(caseId)) {
+          _navigatedCases.add(caseId);
+          await _loadCases();
+          if (!mounted) return;
+
+          final updatedCase = _cases.firstWhere(
+            (x) => x['id'] == caseId,
+            orElse: () => <String, dynamic>{},
+          );
+          if (updatedCase.isEmpty) continue;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('✅ AI 포스팅 완성! 발행할 수 있어요.'),
+              backgroundColor: _green,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: '발행하기 →',
+                textColor: Colors.white,
+                onPressed: () => _openCaseDetail(updatedCase),
+              ),
             ),
-          ),
-        );
+          );
 
-        // 내 사례 탭이면 자동 이동
-        if (_sub.index == 1) {
-          await Future.delayed(const Duration(milliseconds: 600));
-          if (mounted) _openCaseDetail(updatedCase);
+          if (_sub.index == 1) {
+            await Future.delayed(const Duration(milliseconds: 600));
+            if (mounted) _openCaseDetail(updatedCase);
+          }
         }
       }
+    } finally {
+      _isPolling = false;
     }
   }
 
@@ -173,6 +177,7 @@ class _OutputsTabState extends State<OutputsTab>
       _cases = res;
       _loadingCases = false;
       _caseFailCount.clear();
+      _isPolling = false;
     });
 
     // 폴링 없이 이미 done인 케이스 감지 → 스낵바 + 자동 이동
