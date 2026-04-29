@@ -612,6 +612,14 @@ class _OutputsTabState extends State<OutputsTab>
         _openPost(fresh);
         return;
       }
+
+      // outputs 필터에 걸려 안 나올 수 있음 (사례형 즉시 완성 등) → 단건 직접 조회
+      if (!mounted) return;
+      final single = await ApiService.fetchPost(postId as int);
+      if (single != null && single['id'] != null) {
+        if (mounted) _openPost(single);
+        return;
+      }
     }
 
     _showCaseDetailSheet(c);

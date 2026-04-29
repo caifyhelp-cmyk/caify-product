@@ -1895,6 +1895,7 @@ app.post('/api/case/submit', upload.array('case_images', 8), (req, res) => {
           customer_id:    pk,
           prompt_id:      null,
           prompt_node_id: 'case',
+          case_id:        caseItem.id,
           title:          aiTitle,
           subject:        caseTitle,
           intro:          aiSummary,

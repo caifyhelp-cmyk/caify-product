@@ -491,6 +491,26 @@ class ApiService {
     return {};
   }
 
+  // ── 포스팅 단건 조회 ─────────────────────────────────────────
+  static Future<Map<String, dynamic>?> fetchPost(int postId) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return null;
+    AppLogger.info('API', 'GET /api/posts/$postId');
+    try {
+      final res = await http.get(
+        Uri.parse('${cfg['apiBase']}/api/posts/$postId'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+      AppLogger.warn('API', 'fetchPost[$postId] ← ${res.statusCode}');
+    } catch (e) {
+      AppLogger.error('API', 'fetchPost ERR — $e');
+    }
+    return null;
+  }
+
   // ── 산출물(Outputs) 목록 ─────────────────────────────────────
   static Future<Map<String, dynamic>> fetchOutputs({int page = 1}) async {
     final cfg = await loadConfig();
