@@ -2074,13 +2074,10 @@ app.get('/api/outputs', (req, res) => {
   if (!isAdmin(member) && pk !== member.id)
     return res.status(403).json({ ok: false, error: '권한이 없습니다.' });
 
-  // 실서버와 동일: status=1, 2일 이상 지난 것만 (관리자는 전체)
-  const twoDaysAgo = new Date(Date.now() - 2 * 86400000);
+  // 테스트용: 기간 필터 없이 status=1인 것 전부 반환
   const filtered = posts.filter(p => {
     if (isAdmin(member)) return true;
-    return p.customer_id === pk &&
-           p.status === 1 &&
-           new Date(p.created_at) <= twoDaysAgo;
+    return p.customer_id === pk && p.status === 1;
   }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const total = filtered.length;
@@ -2174,4 +2171,16 @@ app.listen(PORT, () => {
   console.log(' member_id: dental2 / passwd: password123');
   console.log(' member_id: admin / passwd: adminpass (관리자)');
   console.log('');
+
+  // Render 슬립 방지: RENDER_EXTERNAL_URL 환경변수가 있으면 14분마다 self-ping
+  const selfUrl = process.env.RENDER_EXTERNAL_URL;
+  if (selfUrl) {
+    const PING_INTERVAL = 14 * 60 * 1000;
+    setInterval(() => {
+      fetch(`${selfUrl}/api/version`)
+        .then(() => console.log(`[keep-alive] ping OK (${new Date().toISOString()})`))
+        .catch(e => console.warn(`[keep-alive] ping FAIL: ${e.message}`));
+    }, PING_INTERVAL);
+    console.log(` [keep-alive] 활성화 — ${selfUrl} (14분 간격)`);
+  }
 });

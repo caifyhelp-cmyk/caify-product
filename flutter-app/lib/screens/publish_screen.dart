@@ -28,6 +28,7 @@ class _PublishScreenState extends State<PublishScreen> {
   int  _redirectAttempts = 0;
   int  _errorAttempts    = 0;      // 에러 페이지 재시도 횟수 (무한루프 방지)
   bool _showBanner       = true;   // 초록 안내 배너 표시 여부
+  bool _publishAttempted = false;  // 발행 버튼 클릭 여부 (완료 감지용)
 
   static const _prefBannerKey    = 'publish_banner_hidden';
   static const _prefCookieKey    = 'naver_cookies_v1';
@@ -334,6 +335,29 @@ class _PublishScreenState extends State<PublishScreen> {
       return;
     }
 
+    // 발행 후 네이버 블로그 포스트로 리다이렉트 감지 → markPublished 호출
+    if (_publishAttempted &&
+        url.contains('blog.naver.com') &&
+        !NaverPublisher.isEditorUrl(url) &&
+        !NaverPublisher.isLoginUrl(url)) {
+      _publishAttempted = false;
+      AppLogger.info('PUB', 'publish redirect detected → markPublished(${widget.post.id})');
+      ApiService.markPublished(widget.post.id).then((ok) {
+        AppLogger.info('PUB', 'markPublished ← $ok');
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ 발행 완료!'),
+            backgroundColor: Color(0xFF03C75A),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+      return;
+    }
+
     if (NaverPublisher.isEditorUrl(url)) {
       if (_waitingStarted) return;
       _waitingStarted   = true;
@@ -528,6 +552,8 @@ class _PublishScreenState extends State<PublishScreen> {
   Future<void> _doPublish() async {
     if (_showBanner) setState(() => _showBanner = false);
     if (_ctrl == null) return;
+
+    _publishAttempted = true;
 
     // 발행 버튼 클릭
     final result = _jsStr(await _ctrl!.evaluateJavascript(
