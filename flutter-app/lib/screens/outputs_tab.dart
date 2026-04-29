@@ -159,16 +159,51 @@ class _OutputsTabState extends State<OutputsTab>
   }
 
   Future<void> _loadCases() async {
+    // 로드 전 이미 done이었던 케이스 ID 보관 (새로 done된 케이스 감지용)
+    final prevDoneIds = _cases
+        .where((c) => c['ai_status'] == 'done')
+        .map((c) => c['id'] as int)
+        .toSet();
+
     setState(() => _loadingCases = true);
     final res = await ApiService.fetchCases();
-    if (mounted) {
-      setState(() {
-        _cases = res;
-        _loadingCases = false;
-        _caseFailCount.clear();  // 새로고침 시 실패 카운트 리셋
-      });
-      _startPollingIfNeeded();
+    if (!mounted) return;
+
+    setState(() {
+      _cases = res;
+      _loadingCases = false;
+      _caseFailCount.clear();
+    });
+
+    // 폴링 없이 이미 done인 케이스 감지 → 스낵바 + 자동 이동
+    for (final c in _cases) {
+      final caseId = c['id'] as int;
+      if (c['ai_status'] == 'done' &&
+          !prevDoneIds.contains(caseId) &&
+          !_navigatedCases.contains(caseId)) {
+        _navigatedCases.add(caseId);
+        if (!mounted) break;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ AI 포스팅 완성! 발행할 수 있어요.'),
+            backgroundColor: _green,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: '발행하기 →',
+              textColor: Colors.white,
+              onPressed: () => _openCaseDetail(c),
+            ),
+          ),
+        );
+        if (_sub.index == 1) {
+          await Future.delayed(const Duration(milliseconds: 600));
+          if (mounted) _openCaseDetail(c);
+        }
+        break;
+      }
     }
+
+    _startPollingIfNeeded();
   }
 
   Future<void> _openCaseSubmit() async {

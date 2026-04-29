@@ -480,8 +480,11 @@ class ApiService {
       final res = await http.get(uri, headers: await _headers())
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
-        return jsonDecode(res.body) as Map<String, dynamic>;
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        AppLogger.info('CASE', 'fetchCaseStatus[$caseId] ← ${data['ai_status']} ${data['progress'] ?? ''}%');
+        return data;
       }
+      AppLogger.warn('CASE', 'fetchCaseStatus[$caseId] ← ${res.statusCode}');
     } catch (e) {
       AppLogger.error('CASE', 'fetchCaseStatus ERR — $e');
     }
