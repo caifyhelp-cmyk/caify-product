@@ -458,13 +458,13 @@ class _PublishScreenState extends State<PublishScreen> {
     // 본문 주입 (실패해도 계속 진행)
     _setStatus(PublishState.injecting, '본문 입력 중...');
     final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
-        source: NaverPublisher.jsInjectHtml(widget.post.html)));
+        source: NaverPublisher.jsInjectHtml(widget.post.naverHtml)));
     AppLogger.log('publish','[inject_body] $bodyResult');
 
     // 2초 후 fallback (paste가 안 됐을 경우 execCommand/innerHTML 시도)
     await Future.delayed(const Duration(seconds: 2));
     final fallbackResult = _jsStr(await _ctrl!.evaluateJavascript(
-        source: NaverPublisher.jsInjectHtmlFallback(widget.post.html)));
+        source: NaverPublisher.jsInjectHtmlFallback(widget.post.naverHtml)));
     AppLogger.log('publish','[inject_body_fallback] $fallbackResult');
 
     // 태그는 발행 다이얼로그에서 주입 (_doPublish 참고)

@@ -9,7 +9,8 @@ import 'post_viewer_screen.dart';
 import 'publish_screen.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final VoidCallback? onNavigateToOutputs;
+  const ChatScreen({super.key, this.onNavigateToOutputs});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -119,10 +120,18 @@ class _ChatScreenState extends State<ChatScreen> {
         context,
         MaterialPageRoute(builder: (_) => PublishScreen(post: post)),
       );
+      return;
+    }
+
+    if (key == 'view_outputs') {
+      AppLogger.info('CHAT', '산출물 탭으로 이동');
+      widget.onNavigateToOutputs?.call();
+      return;
     }
 
     // 서버에 액션 전송
     await ChatService.sendAction(msg.id, key);
+    if (!mounted) return;
     await _load();
   }
 
@@ -269,8 +278,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildActionBtn(ChatMessage msg, ChatAction action) {
-    final isView = action.actionKey == 'view_post';
+    final isView    = action.actionKey == 'view_post';
     final isPublish = action.actionKey == 'publish_post';
+    final isOutputs = action.actionKey == 'view_outputs';
 
     return OutlinedButton(
       onPressed: () => _doAction(msg, action),
@@ -290,9 +300,10 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isView)   const Icon(Icons.article_outlined, size: 14),
+          if (isView)    const Icon(Icons.article_outlined, size: 14),
           if (isPublish) const Icon(Icons.send_outlined, size: 14),
-          if (isView || isPublish) const SizedBox(width: 4),
+          if (isOutputs) const Icon(Icons.inventory_2_outlined, size: 14),
+          if (isView || isPublish || isOutputs) const SizedBox(width: 4),
           Text(action.label),
         ],
       ),

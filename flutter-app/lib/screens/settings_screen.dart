@@ -278,6 +278,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (result != null && result.isNotEmpty && mounted) {
       setState(() => _blogIdLoading = true);
       await ApiService.saveNaverBlogId(result);
+      if (!mounted) return;
       setState(() { _blogId = result; _blogIdLoading = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

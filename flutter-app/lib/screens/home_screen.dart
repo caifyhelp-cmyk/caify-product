@@ -15,23 +15,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+  late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
+    _pages = [
+      ChatScreen(onNavigateToOutputs: () => setState(() => _index = 1)),
+      const OutputsTab(),
+      const WorkflowScreen(),
+      const RankScreen(),
+      const SettingsScreen(),
+    ];
     // 홈 화면 진입 후 업데이트 체크 (백그라운드 — UI 블로킹 없음)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       UpdateService.checkAndPrompt(context);
     });
   }
-
-  static const _pages = <Widget>[
-    ChatScreen(),
-    OutputsTab(),
-    WorkflowScreen(),
-    RankScreen(),
-    SettingsScreen(),
-  ];
 
   @override
   Widget build(BuildContext context) {

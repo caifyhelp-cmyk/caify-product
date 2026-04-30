@@ -86,6 +86,7 @@ class ChatMessage {
       case 'workflow.updated':     return MsgType.workflowUpdated;
       case 'workflow.provisioned': return MsgType.workflowProvisioned;
       case 'mode.changed':         return MsgType.modeChanged;
+      case 'case.done':            return MsgType.postCreated;
       default:                     return MsgType.userText;
     }
   }

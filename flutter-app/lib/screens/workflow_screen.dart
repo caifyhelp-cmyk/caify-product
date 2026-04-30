@@ -97,17 +97,19 @@ class _WorkflowScreenState extends State<WorkflowScreen> {
     if (res['ok'] == true) {
       AppLogger.info('WF_UI', '프로비저닝 성공');
       await _load();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(res['message'] ?? '워크플로우가 설정됐습니다.'),
             backgroundColor: const Color(0xFF03C75A)),
       );
     } else {
       AppLogger.error('WF_UI', '프로비저닝 실패: ${res['error']}');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('오류: ${res['error'] ?? '알 수 없는 오류'}'), backgroundColor: Colors.red),
       );
     }
-    setState(() => _provisioning = false);
+    if (mounted) setState(() => _provisioning = false);
   }
 
   void _toggleWorkflow(int idx, bool val) {
