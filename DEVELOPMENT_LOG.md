@@ -490,6 +490,16 @@ cd mock-server && node server.js  # 포트 3030
 
 ---
 
+## n8n 워크플로우 수정 이력
+
+### 2026-04-30: 사례 포스트 중복 생성 버그 수정
+- **워크플로우**: `사례-홈페이지연동_0427` (ID: `yzOD6jJExSWlBi84`)
+- **노드**: `Merge All1`
+- **원인**: `Merge All1`이 빈 파라미터(`{}` = Append 모드)여서 `Extract Image2`/`Extract Image3`에서 이미지가 하나씩 완성될 때마다 하류를 트리거 → 이미지 N개 시 `POST /api/posts`가 N번 실행 → 포스트 N개 중복 생성
+- **수정**: `Merge All1` 파라미터를 `{ mode: combine, combineBy: combineByPosition }` 으로 변경 → 양쪽 Extract 노드가 모두 완료된 후 한 번만 트리거, `Code in JavaScript2`의 `allNodeRuns`가 전체 이미지 수집 후 포스트 1개 생성
+
+---
+
 ## 알려진 이슈 및 미결 사항
 
 ### 이미지 업로드 (최우선)
