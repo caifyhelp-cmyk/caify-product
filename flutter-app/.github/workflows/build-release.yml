@@ -1,0 +1,60 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'flutter-app/pubspec.yaml'
+      - 'flutter-app/lib/**'
+      - 'flutter-app/android/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from pubspec.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version:' flutter-app/pubspec.yaml | sed 's/version: //' | sed 's/+.*//' | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building v$VERSION"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        working-directory: flutter-app
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: flutter-app
+        run: flutter build apk --debug
+
+      - name: Rename APK
+        run: |
+          cp flutter-app/build/app/outputs/flutter-apk/app-debug.apk Caify-v${{ steps.version.outputs.version }}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Caify v${{ steps.version.outputs.version }}
+          body: |
+            ## Caify v${{ steps.version.outputs.version }}
+
+            APK를 다운로드해서 설치하세요.
+          files: Caify-v${{ steps.version.outputs.version }}.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
