@@ -5,6 +5,7 @@
 - 이모지 중복 방지 (번호이모지 + 라벨이모지 동시 방지)
 - 색상 span → 볼드 강제
 - HTTP Request1 유지
+- 매핑6: ctx + cta → NAVER REBUILD V1 전달
 """
 
 import json, sys, urllib.request, urllib.error
@@ -220,6 +221,59 @@ def patch_naver_rebuild(code: str) -> str:
 # main
 # ──────────────────────────────────────────────
 
+def patch_mapping6(code: str) -> str:
+    OLD = (
+        '    memberPk: memberData?.ctx?.member_pk || $json.memberPk || null,\n'
+        '    promptId: memberData?.ctx?.id || $json.promptId || null\n'
+        '  }\n'
+        '};'
+    )
+    NEW = (
+        '    cta: promptData?.rawParsed?.cta || null,\n'
+        '    ctx: memberData?.ctx || {},\n'
+        '    memberPk: memberData?.ctx?.member_pk || $json.memberPk || null,\n'
+        '    promptId: memberData?.ctx?.id || $json.promptId || null\n'
+        '  }\n'
+        '};'
+    )
+    assert OLD in code, "매핑6 타겟 못 찾음"
+    return code.replace(OLD, NEW, 1)
+
+
+def patch_naver_rebuild_outro(code: str) -> str:
+    OLD = (
+        'function safeItems(nodeName) {\n'
+        '  try { return $items(nodeName) || []; } catch { return []; }\n'
+        '}\n'
+        '\n'
+        "const _parsedPost = safeItems('단락별쪼개기1')[0]?.json?.rawParsed || {};\n"
+        "const _ctaText = norm(_parsedPost.cta?.text || src.cta?.text || j.cta?.text || '');\n"
+        "const _ctaContact = norm(_parsedPost.cta?.urlOrContact || src.cta?.urlOrContact || j.cta?.urlOrContact || '');\n"
+        "const _ctxData = j.ctx || {};\n"
+        "const _companyPhone = norm(_ctxData.phone || _ctxData.contact || j.phone || '');\n"
+        "const _companyAddr = norm(_ctxData.address || j.address || j.fullAddress || '');\n"
+        "const _companyWeb = norm(_ctxData.website || _ctxData.homepage || j.website || '');\n"
+    )
+    NEW = (
+        '// ctx, cta는 매핑6에서 전달됨\n'
+        'const _ctxData = j.ctx || {};\n'
+        "const _ctaText = norm(j.cta?.text || '');\n"
+        "const _ctaContact = norm(j.cta?.urlOrContact || '');\n"
+        "const _companyPhone = norm(_ctxData.phone || _ctxData.contact || j.phone || '');\n"
+        "const _companyAddr = norm(_ctxData.address || j.address || j.fullAddress || '');\n"
+        "const _companyWeb = norm(_ctxData.website || _ctxData.homepage || _ctxData.inquiry_channels || j.website || '');\n"
+        "const _companyBrand = norm(_ctxData.brand_name || j.brand_name || _brandRaw || '');\n"
+    )
+    assert OLD in code, "NAVER REBUILD V1 safeItems 블록 타겟 못 찾음"
+    code = code.replace(OLD, NEW, 1)
+    code = code.replace(
+        "if (_brandRaw) _infoLines.push(`📌 <strong>${esc(_brandRaw)}</strong>`);",
+        "if (_companyBrand) _infoLines.push(`📌 <strong>${esc(_companyBrand)}</strong>`);",
+        1
+    )
+    return code
+
+
 def main():
     print("워크플로우 다운로드 중...")
     wf = get_workflow()
@@ -237,10 +291,21 @@ def main():
             else:
                 print(f"  ⚠️  {name} 변경 없음")
 
+        elif name == "매핑6":
+            original = node["parameters"]["jsCode"]
+            patched  = patch_mapping6(original)
+            if patched != original:
+                node["parameters"]["jsCode"] = patched
+                changed.append(name)
+                print(f"  ✅ {name} 패치 완료")
+            else:
+                print(f"  ⚠️  {name} 변경 없음")
+
         elif name == "NAVER REBUILD V1":
             original = node["parameters"]["jsCode"]
             patched  = patch_naver_rebuild(original)
             if patched != original:
+                patched = patch_naver_rebuild_outro(patched)
                 node["parameters"]["jsCode"] = patched
                 changed.append(name)
                 print(f"  ✅ {name} 패치 완료")
