@@ -436,6 +436,48 @@ def patch_keyword_rotation(code: str) -> str:
     return code.replace(OLD_SEL, NEW_SEL, 1)
 
 
+def patch_keyword_usage_sql(query: str) -> str:
+    """키워드+사용기록 조회 SQL — last_used_at 컬럼 추가 (전체 이력 MAX)"""
+    OLD_Q = (
+        "SELECT\n"
+        "  kp.keyword,\n"
+        "  CASE WHEN ku.keyword IS NOT NULL THEN 1 ELSE 0 END AS used_recently\n"
+        "FROM caify_keyword_pool kp\n"
+        "LEFT JOIN caify_keyword_usage ku\n"
+        "  ON ku.member_pk = kp.member_pk\n"
+        "  AND ku.keyword   = kp.keyword\n"
+        "  AND ku.used_at   > DATE_SUB(CURDATE(), INTERVAL 14 DAY)\n"
+        "WHERE kp.member_pk = {{ $json.member_pk }}\n"
+        "  AND kp.slot      = '{{ $json._resolved_slot }}'"
+    )
+    NEW_Q = (
+        "SELECT\n"
+        "  kp.keyword,\n"
+        "  CASE WHEN ku_recent.keyword IS NOT NULL THEN 1 ELSE 0 END AS used_recently,\n"
+        "  ku_all.last_used_at\n"
+        "FROM caify_keyword_pool kp\n"
+        "LEFT JOIN (\n"
+        "  SELECT DISTINCT keyword, member_pk\n"
+        "  FROM caify_keyword_usage\n"
+        "  WHERE used_at > DATE_SUB(CURDATE(), INTERVAL 14 DAY)\n"
+        ") ku_recent\n"
+        "  ON ku_recent.member_pk = kp.member_pk\n"
+        "  AND ku_recent.keyword   = kp.keyword\n"
+        "LEFT JOIN (\n"
+        "  SELECT keyword, member_pk, MAX(used_at) AS last_used_at\n"
+        "  FROM caify_keyword_usage\n"
+        "  GROUP BY keyword, member_pk\n"
+        ") ku_all\n"
+        "  ON ku_all.member_pk = kp.member_pk\n"
+        "  AND ku_all.keyword   = kp.keyword\n"
+        "WHERE kp.member_pk = {{ $json.member_pk }}\n"
+        "  AND kp.slot      = '{{ $json._resolved_slot }}'"
+    )
+    if OLD_Q in query:
+        return query.replace(OLD_Q, NEW_Q, 1)
+    return query
+
+
 def main():
     print("워크플로우 다운로드 중...")
     wf = get_workflow()
@@ -470,6 +512,16 @@ def main():
             patched  = patch_keyword_rotation(original)
             if patched != original:
                 node["parameters"]["jsCode"] = patched
+                changed.append(name)
+                print(f"  ✅ {name} 패치 완료")
+            else:
+                print(f"  ⚠️  {name} 변경 없음")
+
+        elif name == "키워드+사용기록 조회":
+            original = node["parameters"].get("query", "")
+            patched  = patch_keyword_usage_sql(original)
+            if patched != original:
+                node["parameters"]["query"] = patched
                 changed.append(name)
                 print(f"  ✅ {name} 패치 완료")
             else:
