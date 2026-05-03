@@ -253,8 +253,7 @@ $currentPage = 'bg_page';
 										
                                         <a href="../prompt/prompt.php?id=<?= htmlspecialchars($prompt_node_id) ?>" class="btn__output">프롬프트 수정</a>
                                     <?php endif; ?>
-                                    <!-- <button type="button" class="btn__output btn--copy" onclick="copyRenderedHTML()">산출물 발행</button> -->
-									<button type="button" class="btn__output btn--copy" onclick="publishToNaver()">산출물 발행</button>
+                                    <a href="output_publish_naver.php?id=<?= (int)$post_id ?>" class="btn__output btn--copy">산출물 발행</a>
                                 </div>
 									<input type="hidden" name="action" id="form_action" value="update">
 									<input type="hidden" name="id" value="<?= (int)$post_id ?>">
@@ -275,7 +274,7 @@ $currentPage = 'bg_page';
 									<button type="button" class="btn" onclick="saveEditedContent()">수정 저장</button>
                                     <a href="../prompt/prompt.php?id=<?= htmlspecialchars($prompt_node_id) ?>" class="btn">프롬프트 수정</a>
                                 <?php endif; ?>
-                                <button type="button" class="btn btn--primary" onclick="publishToNaver()">산출물 발행</button>
+                                <a href="output_publish_naver.php?id=<?= (int)$post_id ?>" class="btn btn--primary">산출물 발행</a>
                             </div>
 						</form>
                         <div id="publishWarningModal" class="publish-warning-modal" aria-hidden="true">

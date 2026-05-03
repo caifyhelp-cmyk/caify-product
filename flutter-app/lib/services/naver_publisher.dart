@@ -805,6 +805,115 @@ class NaverPublisher {
       url.contains('PostWriteForm') ||
       url.contains('GoPost');
 
+  // ── 네이버 폰트 목록 ──────────────────────────────────────────
+  // key: SharedPreferences 저장값 / value: 표시 이름
+  static const Map<String, String> naverFonts = {
+    '': '기본',
+    "NanumGothic, '나눔고딕', sans-serif": '나눔고딕',
+    "NanumMyeongjo, '나눔명조', serif": '나눔명조',
+    "NanumBarunGothic, '나눔바른고딕', sans-serif": '나눔바른고딕',
+    "'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif": '맑은고딕',
+    "dotum, '돋움', sans-serif": '돋움',
+    "gulim, '굴림', sans-serif": '굴림',
+    "batang, '바탕', serif": '바탕',
+    "gungsuh, '궁서', serif": '궁서',
+    'Arial, sans-serif': 'Arial',
+    'Verdana, sans-serif': 'Verdana',
+    'D2Coding, monospace': 'D2Coding',
+  };
+
+  // ── HTML 전처리: <p> 태그에 정렬·폰트 인라인 스타일 적용 ────────
+  // jsInjectHtml() 호출 전에 HTML을 미리 가공 → 주입 후 별도 JS 불필요
+  static String applyStyleToHtml(
+    String html, {
+    String align = 'left',
+    String fontFamily = '',
+  }) {
+    if (align == 'left' && fontFamily.isEmpty) return html;
+    final styles = <String>[];
+    if (align != 'left') styles.add('text-align:$align');
+    if (fontFamily.isNotEmpty) styles.add('font-family:$fontFamily');
+    final styleStr = styles.join(';');
+
+    return html.replaceAllMapped(
+      RegExp(r'<p(\s[^>]*)?>', caseSensitive: false),
+      (m) {
+        final attrs = m.group(1) ?? '';
+        final existing = RegExp(r'\bstyle="([^"]*)"', caseSensitive: false).firstMatch(attrs);
+        if (existing != null) {
+          return '<p${attrs.replaceFirst(existing.group(0)!, 'style="${existing.group(1)!};$styleStr"')}>';
+        }
+        return '<p$attrs style="$styleStr">';
+      },
+    );
+  }
+
+  // ── 주입 후 정렬 적용 JS (applyStyleToHtml 미적용 시 폴백) ────────
+  static String jsApplyAlignToBody(String align) {
+    final a = _escapeJs(align);
+    return '''
+      (function() {
+        const findDoc = function() {
+          if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+          const frames = [
+            document.querySelector("iframe[name='mainFrame']"),
+            document.querySelector("iframe#mainFrame"),
+            document.querySelector("iframe"),
+          ];
+          for (const f of frames) {
+            if (!f) continue;
+            let d; try { d = f.contentDocument; } catch(e) { continue; }
+            if (d && d.querySelector('.se-title-text,.se-section-documentTitle')) return d;
+          }
+          return null;
+        };
+        const doc = findDoc();
+        if (!doc) return 'no_doc';
+        let count = 0;
+        doc.querySelectorAll('p').forEach(p => {
+          if (!p.closest('.se-section-documentTitle') && !p.closest('.se-title-text')) {
+            p.style.textAlign = "$a";
+            count++;
+          }
+        });
+        return 'ok_align:$a:' + count;
+      })()
+    ''';
+  }
+
+  // ── 주입 후 폰트 적용 JS (applyStyleToHtml 미적용 시 폴백) ────────
+  static String jsApplyFontToBody(String fontFamily) {
+    final f = _escapeJs(fontFamily);
+    return '''
+      (function() {
+        const findDoc = function() {
+          if (document.querySelector('.se-title-text,.se-section-documentTitle')) return document;
+          const frames = [
+            document.querySelector("iframe[name='mainFrame']"),
+            document.querySelector("iframe#mainFrame"),
+            document.querySelector("iframe"),
+          ];
+          for (const f of frames) {
+            if (!f) continue;
+            let d; try { d = f.contentDocument; } catch(e) { continue; }
+            if (d && d.querySelector('.se-title-text,.se-section-documentTitle')) return d;
+          }
+          return null;
+        };
+        const doc = findDoc();
+        if (!doc) return 'no_doc';
+        let count = 0;
+        doc.querySelectorAll('p').forEach(p => {
+          if (!p.closest('.se-section-documentTitle') && !p.closest('.se-title-text')) {
+            p.style.fontFamily = "$f";
+            count++;
+          }
+        });
+        return 'ok_font:count=' + count;
+      })()
+    ''';
+  }
+
   // ── JS 이스케이프 ─────────────────────────────────────────────
   static String _escapeJs(String s) => s
       .replaceAll(r'\', r'\\')

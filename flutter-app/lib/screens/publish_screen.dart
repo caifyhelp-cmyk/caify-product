@@ -27,12 +27,19 @@ class _PublishScreenState extends State<PublishScreen> {
   String _statusMsg      = '에디터 로드 중...';
   bool _waitingStarted   = false;
   int  _redirectAttempts = 0;
-  int  _errorAttempts    = 0;      // 에러 페이지 재시도 횟수 (무한루프 방지)
-  bool _showBanner       = true;   // 초록 안내 배너 표시 여부
-  bool _publishAttempted = false;  // 발행 버튼 클릭 여부 (완료 감지용)
+  int  _errorAttempts    = 0;
+  bool _showBanner       = true;
+  bool _publishAttempted = false;
 
-  static const _prefBannerKey    = 'publish_banner_hidden';
-  static const _prefCookieKey    = 'naver_cookies_v1';
+  // 정렬·폰트 옵션
+  String _selectedAlign  = 'left';
+  String _selectedFont   = '';
+  bool   _optionsReady   = false;   // 옵션 확인 후 WebView URL 로드
+
+  static const _prefBannerKey = 'publish_banner_hidden';
+  static const _prefCookieKey = 'naver_cookies_v1';
+  static const _prefAlignKey  = 'publish_align';
+  static const _prefFontKey   = 'publish_font';
 
   static String _jsStr(dynamic r) => r?.toString() ?? '';
 
@@ -51,6 +58,161 @@ class _PublishScreenState extends State<PublishScreen> {
     final prefs = await SharedPreferences.getInstance();
     final hidden = prefs.getBool(_prefBannerKey) ?? false;
     if (hidden && mounted) setState(() => _showBanner = false);
+
+    _selectedAlign = prefs.getString(_prefAlignKey) ?? 'left';
+    _selectedFont  = prefs.getString(_prefFontKey)  ?? '';
+
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showPublishOptions());
+    }
+  }
+
+  // ── 발행 옵션 바텀시트 ────────────────────────────────────
+  Future<void> _showPublishOptions() async {
+    String tmpAlign = _selectedAlign;
+    String tmpFont  = _selectedFont;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            top: 24, left: 20, right: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 핸들
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text('발행 옵션',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text('선택한 설정이 본문 전체에 적용됩니다',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+              const SizedBox(height: 20),
+
+              // 정렬
+              const Text('본문 정렬',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  for (final e in [('left', '☰ 왼쪽'), ('center', '≡ 가운데'), ('right', '☱ 오른쪽')])
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(right: e.$1 == 'right' ? 0 : 8),
+                        child: GestureDetector(
+                          onTap: () => setSheet(() => tmpAlign = e.$1),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: tmpAlign == e.$1 ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                              color: tmpAlign == e.$1 ? const Color(0xFFEFF6FF) : Colors.white,
+                            ),
+                            child: Text(e.$2,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: tmpAlign == e.$1 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              // 폰트
+              const Text('본문 폰트',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: tmpFont,
+                    isExpanded: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    borderRadius: BorderRadius.circular(10),
+                    items: NaverPublisher.naverFonts.entries.map((e) =>
+                      DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value,
+                            style: const TextStyle(fontSize: 14, color: Color(0xFF334155))),
+                      ),
+                    ).toList(),
+                    onChanged: (v) => setSheet(() => tmpFont = v ?? ''),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // 확인 버튼
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: const Text('확인 · 발행 시작',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 바텀시트 닫힌 후 선택값 저장 + WebView 로드 시작
+    _selectedAlign = tmpAlign;
+    _selectedFont  = tmpFont;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefAlignKey, _selectedAlign);
+    await prefs.setString(_prefFontKey, _selectedFont);
+
+    if (mounted) setState(() => _optionsReady = true);
+    if (_ctrl != null) await _startNaverLoad(_ctrl!);
+  }
+
+  Future<void> _startNaverLoad(InAppWebViewController ctrl) async {
+    await _restoreNaverCookies();
+    await ctrl.loadUrl(urlRequest: URLRequest(
+      url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
+    ));
   }
 
   // ── 배너 닫기 ──────────────────────────────────────────────
@@ -180,11 +342,8 @@ class _PublishScreenState extends State<PublishScreen> {
               ),
               onWebViewCreated: (ctrl) async {
                 _ctrl = ctrl;
-                // 쿠키 먼저 복원 → 그 다음 URL 로드 (로그인 유지)
-                await _restoreNaverCookies();
-                await ctrl.loadUrl(urlRequest: URLRequest(
-                  url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
-                ));
+                // 옵션 확인 후 로드 (_showPublishOptions 완료 시 _startNaverLoad 호출)
+                if (_optionsReady) await _startNaverLoad(ctrl);
               },
               onLoadStop: (ctrl, url) async {
                 final u = url?.toString() ?? '';
@@ -457,14 +616,16 @@ class _PublishScreenState extends State<PublishScreen> {
 
     // 본문 주입 (실패해도 계속 진행)
     _setStatus(PublishState.injecting, '본문 입력 중...');
+    final styledHtml = NaverPublisher.applyStyleToHtml(
+        widget.post.naverHtml, align: _selectedAlign, fontFamily: _selectedFont);
     final bodyResult = _jsStr(await _ctrl!.evaluateJavascript(
-        source: NaverPublisher.jsInjectHtml(widget.post.naverHtml)));
+        source: NaverPublisher.jsInjectHtml(styledHtml)));
     AppLogger.log('publish','[inject_body] $bodyResult');
 
     // 2초 후 fallback (paste가 안 됐을 경우 execCommand/innerHTML 시도)
     await Future.delayed(const Duration(seconds: 2));
     final fallbackResult = _jsStr(await _ctrl!.evaluateJavascript(
-        source: NaverPublisher.jsInjectHtmlFallback(widget.post.naverHtml)));
+        source: NaverPublisher.jsInjectHtmlFallback(styledHtml)));
     AppLogger.log('publish','[inject_body_fallback] $fallbackResult');
 
     // 태그는 발행 다이얼로그에서 주입 (_doPublish 참고)
