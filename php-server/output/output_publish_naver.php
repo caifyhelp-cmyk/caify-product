@@ -350,6 +350,19 @@ $currentPage = 'bg_page';
                         <div class="publish-helper__title"><?= htmlspecialchars($title) ?></div>
                         <div class="publish-helper__meta">확장프로그램 없이 네이버 블로그에 발행합니다</div>
 
+                        <!-- 태그 (최초/재방문 공통) -->
+                        <?php if (!empty($tags)): ?>
+                        <div class="option-group">
+                            <div class="option-group__label">태그</div>
+                            <div class="tag-list">
+                                <?php foreach ($tags as $tag): ?>
+                                    <span class="tag-badge">#<?= htmlspecialchars((string)$tag) ?></span>
+                                <?php endforeach; ?>
+                            </div>
+                            <div style="margin-top:8px; font-size:0.78rem; color:#94a3b8;">네이버 에디터에서 태그 입력란에 직접 입력해 주세요.</div>
+                        </div>
+                        <?php endif; ?>
+
                         <?php if ($is_first_time): ?>
                         <!-- ── 최초: 설정 선택 패널 ─────────────────────── -->
                         <div id="settingsPanel" style="background:#f0f9ff; border:2px solid #bae6fd; border-radius:14px; padding:20px 22px; margin-bottom:24px;">
@@ -370,7 +383,7 @@ $currentPage = 'bg_page';
                                 <?php endforeach; ?>
                             </select>
 
-                            <button type="button" onclick="saveSettings()" style="width:100%; padding:12px; background:#2563eb; color:#fff; border:none; border-radius:10px; font-size:0.95rem; font-weight:800; cursor:pointer;">
+                            <button type="button" onclick="saveSettings(this)" style="width:100%; padding:12px; background:#2563eb; color:#fff; border:none; border-radius:10px; font-size:0.95rem; font-weight:800; cursor:pointer;">
                                 설정 저장 후 발행 시작 →
                             </button>
                         </div>
@@ -388,19 +401,6 @@ $currentPage = 'bg_page';
                             <span>현재 설정: <strong style="color:#1e293b;"><?= htmlspecialchars($align_label) ?></strong> &middot; <strong style="color:#1e293b;"><?= htmlspecialchars($font_label) ?></strong></span>
                             <a href="../mycaify/profile_edit.php" style="margin-left:auto; font-size:0.8rem; color:#2563eb; text-decoration:none; white-space:nowrap;">설정 변경 →</a>
                         </div>
-
-                        <!-- 태그 -->
-                        <?php if (!empty($tags)): ?>
-                        <div class="option-group">
-                            <div class="option-group__label">태그</div>
-                            <div class="tag-list">
-                                <?php foreach ($tags as $tag): ?>
-                                    <span class="tag-badge">#<?= htmlspecialchars((string)$tag) ?></span>
-                                <?php endforeach; ?>
-                            </div>
-                            <div style="margin-top:8px; font-size:0.78rem; color:#94a3b8;">네이버 에디터에서 태그 입력란에 직접 입력해 주세요.</div>
-                        </div>
-                        <?php endif; ?>
 
                         <div id="stepsWrap">
                         <?php endif; ?>
@@ -489,8 +489,7 @@ function onFontChange(val) {
 }
 
 // ── 최초 설정 저장 후 발행 시작 ──────────────────────────────
-async function saveSettings() {
-    const btn = event.currentTarget;
+async function saveSettings(btn) {
     btn.disabled = true;
     btn.textContent = '저장 중...';
     const form = new FormData();
