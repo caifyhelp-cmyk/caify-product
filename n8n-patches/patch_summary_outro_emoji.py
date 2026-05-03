@@ -11,6 +11,10 @@
 - AI 표현 금지·자기검수 (흐름/말미/이처럼 등)
 - 마무리 끝 문장·CTA 구체 숫자 비교형 강제
 - 키워드 폴백 Fisher-Yates 셔플 + last_used_at 기반 오래된 키워드 우선
+- 각도 지시어 완화: summary 강제 반영 → 배경 방향만 (첫 문장은 독자 고통 중심 유지)
+- 소제목 콜론(:) 완전 금지 (제목+설명 분리 패턴 포함 어떤 형태도 불가)
+- summary → 본문 사이 가로줄(HR) 고정 (sectionDivider before sections loop)
+- parseSections isRealH2 버그 수정 (첫 H2가 ?/!/. 로 끝나도 heading 렌더링)
 
 ■ 키워드 로테이션 설계 (전체)
 ┌─────────────────────────────────────────────────────────┐
@@ -176,6 +180,27 @@ def patch_mamuji_cta(code: str) -> str:
         code = code.replace(OLD_CTA, NEW_CTA, 1)
 
     return code
+
+
+def patch_angle_direction(code: str) -> str:
+    """각도 지시어 완화: 'summary 첫 문장에서 반드시 반영' → 배경 방향만 활용 (첫 문장은 독자 고통 중심)"""
+    OLD = "'- [이번 글의 핵심 각도 — summary 첫 문장에서 반드시 이 각도를 독자 상황과 연결해서 반영]\\n  '"
+    NEW = "'- [이번 글의 핵심 포지셔닝 방향 — 해결책·강점의 방향으로만 활용, 첫 문장은 독자 고통 중심 유지, 각도 언어 직접 인용 금지]\\n  '"
+    if OLD not in code:
+        return code
+    return code.replace(OLD, NEW, 1)
+
+
+def patch_colon_ban(code: str) -> str:
+    """소제목 콜론(:) 완전 금지 규칙 추가 — 제목+설명 분리 패턴 포함 어떤 형태도 불가"""
+    OLD = 'bodyMarkdown은 반드시 "## " 제목만 사용'
+    NEW = (
+        'bodyMarkdown은 반드시 "## " 제목만 사용\n'
+        '- ## 소제목에 콜론(:) 사용 완전 금지 — 제목+설명 분리 패턴 포함 어떤 형태도 불가, 콜론 없이 완성된 구문으로만 작성'
+    )
+    if OLD not in code or '소제목에 콜론(:) 사용 완전 금지' in code:
+        return code
+    return code.replace(OLD, NEW, 1)
 
 
 # ──────────────────────────────────────────────
@@ -370,6 +395,39 @@ def patch_naver_rebuild_outro(code: str) -> str:
         1
     )
     return code
+
+
+def patch_naver_hr_divider(code: str) -> str:
+    """summary → 본문 사이 HR 고정: sections 루프 직전에 sectionDivider() + enter1() 삽입"""
+    OLD = (
+        '// -------------------- sections --------------------\n'
+        'for (const sec of sections){'
+    )
+    NEW = (
+        '// -------------------- sections --------------------\n'
+        'if (sections.length > 0) {\n'
+        '  html += sectionDivider();\n'
+        '  html += enter1();\n'
+        '}\n'
+        '\n'
+        'for (const sec of sections){'
+    )
+    if OLD not in code or 'if (sections.length > 0) {\n  html += sectionDivider();' in code:
+        return code
+    return code.replace(OLD, NEW, 1)
+
+
+def patch_naver_parse_sections(code: str) -> str:
+    """parseSections isRealH2 버그 수정: ?/!/. 로 끝나는 첫 H2도 heading으로 렌더링"""
+    OLD = (
+        'const isRealH2 =\n'
+        '      idx !== 0 ||\n'
+        '      /^.{1,40}$/.test(firstLine) && !/[.!?]$/.test(firstLine);'
+    )
+    NEW = 'const isRealH2 = true;'
+    if OLD not in code:
+        return code
+    return code.replace(OLD, NEW, 1)
 
 
 def patch_naver_rebuild_ctx_fallback(code: str) -> str:
@@ -579,6 +637,8 @@ def main():
             patched  = patch_prompt_selfcheck(patched)
             patched  = patch_prompt_selfcheck_v2(patched)
             patched  = patch_mamuji_cta(patched)
+            patched  = patch_angle_direction(patched)
+            patched  = patch_colon_ban(patched)
             if patched != original:
                 node["parameters"]["jsCode"] = patched
                 changed.append(name)
@@ -623,6 +683,8 @@ def main():
                 patched = patch_naver_rebuild_outro(patched)
             # ctx fallback은 이미 outro 적용된 상태에도 추가 적용
             patched2 = patch_naver_rebuild_ctx_fallback(patched)
+            patched2 = patch_naver_hr_divider(patched2)
+            patched2 = patch_naver_parse_sections(patched2)
             if patched2 != original:
                 node["parameters"]["jsCode"] = patched2
                 changed.append(name)
