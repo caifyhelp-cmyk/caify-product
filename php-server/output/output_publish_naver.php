@@ -32,23 +32,50 @@ if ($post_id <= 0) {
     exit;
 }
 
-// ── 발행 완료 기록 (AJAX) ──────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'mark_done') {
+// ── AJAX 핸들러 ──────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=UTF-8');
-    try {
-        $pdo = db();
-        $sql = 'UPDATE ai_posts SET posting_date = NOW() WHERE id = :id';
-        $params = [':id' => $post_id];
-        if (!$is_admin) {
-            $sql .= ' AND customer_id = :cid';
-            $params[':cid'] = $customer_id;
+    $action = (string)($_POST['action'] ?? '');
+
+    // 발행 설정 저장
+    if ($action === 'save_settings') {
+        $align = (string)($_POST['align'] ?? 'left');
+        $font  = (string)($_POST['font']  ?? '');
+        if (!in_array($align, ['left', 'center', 'right'], true)) {
+            echo json_encode(['ok' => false, 'error' => 'invalid align']);
+            exit;
         }
-        $sql .= ' LIMIT 1';
-        $pdo->prepare($sql)->execute($params);
-        echo json_encode(['ok' => true]);
-    } catch (Throwable $e) {
-        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        try {
+            $pdo = db();
+            $pdo->prepare('UPDATE caify_member SET publish_align = :align, publish_font = :font WHERE id = :id')
+                ->execute([':align' => $align, ':font' => $font, ':id' => $customer_id]);
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
     }
+
+    // 발행 완료 기록
+    if ($action === 'mark_done') {
+        try {
+            $pdo = db();
+            $sql = 'UPDATE ai_posts SET posting_date = NOW() WHERE id = :id';
+            $params = [':id' => $post_id];
+            if (!$is_admin) {
+                $sql .= ' AND customer_id = :cid';
+                $params[':cid'] = $customer_id;
+            }
+            $sql .= ' LIMIT 1';
+            $pdo->prepare($sql)->execute($params);
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    echo json_encode(['ok' => false, 'error' => 'unknown action']);
     exit;
 }
 
@@ -76,6 +103,21 @@ $title    = (string)($post['title'] ?? '');
 $html_raw = (string)($post['naver_html'] ?? '');
 $tags_raw = (string)($post['tags'] ?? '[]');
 $tags     = json_decode($tags_raw, true) ?: [];
+
+// ── 회원 발행 설정 로드 ───────────────────────────────────────
+$pub_align = null;
+$pub_font  = null;
+try {
+    $s = $pdo->prepare('SELECT publish_align, publish_font FROM caify_member WHERE id = :id LIMIT 1');
+    $s->execute([':id' => $customer_id]);
+    $pub_row = $s->fetch();
+    if (is_array($pub_row)) {
+        $pub_align = $pub_row['publish_align']; // null = 미설정(최초)
+        $pub_font  = (string)($pub_row['publish_font'] ?? '');
+    }
+} catch (Throwable $_) {}
+
+$is_first_time = ($pub_align === null);
 
 // ── 네이버 폰트 목록 ──────────────────────────────────────────
 $naver_fonts = [
@@ -308,30 +350,43 @@ $currentPage = 'bg_page';
                         <div class="publish-helper__title"><?= htmlspecialchars($title) ?></div>
                         <div class="publish-helper__meta">확장프로그램 없이 네이버 블로그에 발행합니다</div>
 
-                        <!-- 정렬 선택 -->
-                        <div class="option-group">
-                            <div class="option-group__label">본문 정렬</div>
-                            <div class="align-btns">
-                                <button type="button" class="align-btn active" data-align="left" onclick="setAlign('left', this)">
-                                    ☰ 왼쪽
-                                </button>
-                                <button type="button" class="align-btn" data-align="center" onclick="setAlign('center', this)">
-                                    ≡ 가운데
-                                </button>
-                                <button type="button" class="align-btn" data-align="right" onclick="setAlign('right', this)">
-                                    ☱ 오른쪽
-                                </button>
-                            </div>
-                        </div>
+                        <?php if ($is_first_time): ?>
+                        <!-- ── 최초: 설정 선택 패널 ─────────────────────── -->
+                        <div id="settingsPanel" style="background:#f0f9ff; border:2px solid #bae6fd; border-radius:14px; padding:20px 22px; margin-bottom:24px;">
+                            <div style="font-size:0.95rem; font-weight:800; color:#0369a1; margin-bottom:4px;">발행 설정 (최초 1회)</div>
+                            <div style="font-size:0.8rem; color:#64748b; margin-bottom:18px;">저장 후 다음부터는 자동으로 적용됩니다. 나중에 <a href="../mycaify/profile_edit.php" style="color:#2563eb;">프로필 설정</a>에서 변경할 수 있습니다.</div>
 
-                        <!-- 폰트 선택 -->
-                        <div class="option-group">
-                            <div class="option-group__label">본문 폰트</div>
-                            <select class="font-select" id="fontSelect" onchange="onFontChange(this.value)">
+                            <div class="option-group__label" style="font-size:0.82rem; font-weight:700; color:#475569; margin-bottom:8px;">본문 정렬</div>
+                            <div class="align-btns" style="margin-bottom:16px;">
+                                <button type="button" class="align-btn active" data-align="left" onclick="setAlign('left', this)">☰ 왼쪽</button>
+                                <button type="button" class="align-btn" data-align="center" onclick="setAlign('center', this)">≡ 가운데</button>
+                                <button type="button" class="align-btn" data-align="right" onclick="setAlign('right', this)">☱ 오른쪽</button>
+                            </div>
+
+                            <div class="option-group__label" style="font-size:0.82rem; font-weight:700; color:#475569; margin-bottom:8px;">본문 폰트</div>
+                            <select class="font-select" id="fontSelect" onchange="onFontChange(this.value)" style="margin-bottom:20px;">
                                 <?php foreach ($naver_fonts as $value => $label): ?>
                                     <option value="<?= htmlspecialchars($value) ?>"><?= htmlspecialchars($label) ?></option>
                                 <?php endforeach; ?>
                             </select>
+
+                            <button type="button" onclick="saveSettings()" style="width:100%; padding:12px; background:#2563eb; color:#fff; border:none; border-radius:10px; font-size:0.95rem; font-weight:800; cursor:pointer;">
+                                설정 저장 후 발행 시작 →
+                            </button>
+                        </div>
+
+                        <!-- 설정 저장 전에는 단계 영역 숨김 -->
+                        <div id="stepsWrap" style="display:none;">
+                        <?php else: ?>
+                        <!-- ── 기존: 현재 설정 요약 + 변경 링크 ──────────── -->
+                        <?php
+                            $align_labels = ['left' => '☰ 왼쪽 정렬', 'center' => '≡ 가운데 정렬', 'right' => '☱ 오른쪽 정렬'];
+                            $align_label  = $align_labels[$pub_align] ?? '☰ 왼쪽 정렬';
+                            $font_label   = $pub_font !== '' ? ($naver_fonts[$pub_font] ?? $pub_font) : '기본 폰트';
+                        ?>
+                        <div style="display:flex; align-items:center; gap:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 16px; margin-bottom:22px; font-size:0.85rem; color:#475569;">
+                            <span>현재 설정: <strong style="color:#1e293b;"><?= htmlspecialchars($align_label) ?></strong> &middot; <strong style="color:#1e293b;"><?= htmlspecialchars($font_label) ?></strong></span>
+                            <a href="../mycaify/profile_edit.php" style="margin-left:auto; font-size:0.8rem; color:#2563eb; text-decoration:none; white-space:nowrap;">설정 변경 →</a>
                         </div>
 
                         <!-- 태그 -->
@@ -343,10 +398,11 @@ $currentPage = 'bg_page';
                                     <span class="tag-badge">#<?= htmlspecialchars((string)$tag) ?></span>
                                 <?php endforeach; ?>
                             </div>
-                            <div style="margin-top:8px; font-size:0.78rem; color:#94a3b8;">
-                                네이버 에디터에서 태그 입력란에 직접 입력해 주세요.
-                            </div>
+                            <div style="margin-top:8px; font-size:0.78rem; color:#94a3b8;">네이버 에디터에서 태그 입력란에 직접 입력해 주세요.</div>
                         </div>
+                        <?php endif; ?>
+
+                        <div id="stepsWrap">
                         <?php endif; ?>
 
                         <!-- 단계별 발행 -->
@@ -399,6 +455,7 @@ $currentPage = 'bg_page';
                                 </button>
                             </div>
                         </div>
+                        </div><!-- /stepsWrap -->
 
                         <div style="margin-top:20px; text-align:right;">
                             <a href="output_list.php" class="btn" style="font-size:0.85rem;">← 목록으로</a>
@@ -415,32 +472,49 @@ $currentPage = 'bg_page';
 const RAW_HTML = <?= json_encode($html_raw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const POST_TITLE = <?= json_encode($title, JSON_UNESCAPED_UNICODE) ?>;
 const POST_ID = <?= (int)$post_id ?>;
+const IS_FIRST_TIME = <?= $is_first_time ? 'true' : 'false' ?>;
 
-const LS_ALIGN = 'caify_publish_align';
-const LS_FONT  = 'caify_publish_font';
-
-let selectedAlign = localStorage.getItem(LS_ALIGN) || 'left';
-let selectedFont  = localStorage.getItem(LS_FONT)  || '';
-
-// 페이지 로드 시 저장된 설정 복원
-(function restoreSettings() {
-    document.querySelectorAll('.align-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.align === selectedAlign);
-    });
-    const fontSel = document.getElementById('fontSelect');
-    if (fontSel) fontSel.value = selectedFont;
-})();
+// DB에서 불러온 저장값 (최초엔 기본값)
+let selectedAlign = <?= json_encode($pub_align ?? 'left') ?>;
+let selectedFont  = <?= json_encode($pub_font  ?? '') ?>;
 
 function setAlign(align, btn) {
     selectedAlign = align;
-    localStorage.setItem(LS_ALIGN, align);
     document.querySelectorAll('.align-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 }
 
 function onFontChange(val) {
     selectedFont = val;
-    localStorage.setItem(LS_FONT, val);
+}
+
+// ── 최초 설정 저장 후 발행 시작 ──────────────────────────────
+async function saveSettings() {
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '저장 중...';
+    const form = new FormData();
+    form.append('action', 'save_settings');
+    form.append('align',  selectedAlign);
+    form.append('font',   selectedFont);
+    try {
+        const resp = await fetch('output_publish_naver.php?id=' + POST_ID, {
+            method: 'POST', body: form, credentials: 'same-origin'
+        });
+        const result = await resp.json();
+        if (result.ok) {
+            document.getElementById('settingsPanel').style.display = 'none';
+            document.getElementById('stepsWrap').style.display = 'block';
+        } else {
+            alert('저장 실패: ' + (result.error || '알 수 없는 오류'));
+            btn.disabled = false;
+            btn.textContent = '설정 저장 후 발행 시작 →';
+        }
+    } catch (e) {
+        alert('네트워크 오류: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '설정 저장 후 발행 시작 →';
+    }
 }
 
 // ── HTML에 정렬·폰트 적용 (클라이언트 사이드) ─────────────────

@@ -41,7 +41,7 @@ function swal(string $title, string $text, string $icon, string $redirectUrl = '
 }
 
 $pdo = db();
-$stmt = $pdo->prepare('SELECT member_id, company_name, member_name, phone FROM caify_member WHERE id = :id LIMIT 1');
+$stmt = $pdo->prepare('SELECT member_id, company_name, member_name, phone, publish_align, publish_font FROM caify_member WHERE id = :id LIMIT 1');
 $stmt->execute([':id' => $memberPk]);
 $row = $stmt->fetch();
 
@@ -50,17 +50,22 @@ if (!is_array($row)) {
     exit;
 }
 
-$company_name = (string)($row['company_name'] ?? '');
-$member_name  = (string)($row['member_name'] ?? '');
-$phone        = (string)($row['phone'] ?? '');
-$member_id    = (string)($row['member_id'] ?? '');
+$company_name  = (string)($row['company_name']  ?? '');
+$member_name   = (string)($row['member_name']   ?? '');
+$phone         = (string)($row['phone']         ?? '');
+$member_id     = (string)($row['member_id']     ?? '');
+$publish_align = (string)($row['publish_align'] ?? 'left');
+$publish_font  = (string)($row['publish_font']  ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $company_name = trim((string)($_POST['company_name'] ?? ''));
-    $member_name  = trim((string)($_POST['member_name'] ?? ''));
-    $phone        = trim((string)($_POST['phone'] ?? ''));
-    $new_pass     = (string)($_POST['new_pass'] ?? '');
-    $new_pass2    = (string)($_POST['new_pass2'] ?? '');
+    $company_name  = trim((string)($_POST['company_name'] ?? ''));
+    $member_name   = trim((string)($_POST['member_name']  ?? ''));
+    $phone         = trim((string)($_POST['phone']        ?? ''));
+    $new_pass      = (string)($_POST['new_pass']  ?? '');
+    $new_pass2     = (string)($_POST['new_pass2'] ?? '');
+    $publish_align = in_array($_POST['publish_align'] ?? '', ['left', 'center', 'right'], true)
+                     ? (string)$_POST['publish_align'] : 'left';
+    $publish_font  = (string)($_POST['publish_font'] ?? '');
 
     if ($company_name === '' || $member_name === '' || $phone === '') {
         $error = '회사명/이름/연락처는 필수입니다.';
@@ -84,31 +89,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd = $pdo->prepare(
                 'UPDATE caify_member
                     SET company_name = :company_name,
-                        member_name = :member_name,
-                        phone = :phone,
-                        passwd = :passwd
+                        member_name  = :member_name,
+                        phone        = :phone,
+                        passwd       = :passwd,
+                        publish_align = :publish_align,
+                        publish_font  = :publish_font
                   WHERE id = :id'
             );
             $upd->execute([
-                ':company_name' => $company_name,
-                ':member_name' => $member_name,
-                ':phone' => $phone,
-                ':passwd' => $hash,
-                ':id' => $memberPk,
+                ':company_name'  => $company_name,
+                ':member_name'   => $member_name,
+                ':phone'         => $phone,
+                ':passwd'        => $hash,
+                ':publish_align' => $publish_align,
+                ':publish_font'  => $publish_font,
+                ':id'            => $memberPk,
             ]);
         } else {
             $upd = $pdo->prepare(
                 'UPDATE caify_member
-                    SET company_name = :company_name,
-                        member_name = :member_name,
-                        phone = :phone
+                    SET company_name  = :company_name,
+                        member_name   = :member_name,
+                        phone         = :phone,
+                        publish_align = :publish_align,
+                        publish_font  = :publish_font
                   WHERE id = :id'
             );
             $upd->execute([
-                ':company_name' => $company_name,
-                ':member_name' => $member_name,
-                ':phone' => $phone,
-                ':id' => $memberPk,
+                ':company_name'  => $company_name,
+                ':member_name'   => $member_name,
+                ':phone'         => $phone,
+                ':publish_align' => $publish_align,
+                ':publish_font'  => $publish_font,
+                ':id'            => $memberPk,
             ]);
         }
 
@@ -158,6 +171,46 @@ $currentPage = 'bg_page';
                                 <tr>
                                     <th>새 비밀번호 확인</th>
                                     <td><input type="password" class="input--text" name="new_pass2" placeholder="변경 시에만 입력해주세요."></td>
+                                </tr>
+                                <tr>
+                                    <th>발행 본문 정렬</th>
+                                    <td>
+                                        <select name="publish_align" class="input--text" style="width:auto;">
+                                            <option value="left"   <?= $publish_align === 'left'   ? 'selected' : '' ?>>☰ 왼쪽</option>
+                                            <option value="center" <?= $publish_align === 'center' ? 'selected' : '' ?>>≡ 가운데</option>
+                                            <option value="right"  <?= $publish_align === 'right'  ? 'selected' : '' ?>>☱ 오른쪽</option>
+                                        </select>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>발행 본문 폰트</th>
+                                    <td>
+                                        <select name="publish_font" class="input--text" style="width:auto;">
+                                            <?php
+                                            $fonts = [
+                                                ''                                                          => '기본',
+                                                "NanumGothic, '나눔고딕', sans-serif"                       => '나눔고딕',
+                                                "NanumMyeongjo, '나눔명조', serif"                          => '나눔명조',
+                                                "NanumBarunGothic, '나눔바른고딕', sans-serif"              => '나눔바른고딕',
+                                                "'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif"        => '맑은고딕',
+                                                "dotum, '돋움', sans-serif"                                 => '돋움',
+                                                "gulim, '굴림', sans-serif"                                 => '굴림',
+                                                "batang, '바탕', serif"                                     => '바탕',
+                                                "gungsuh, '궁서', serif"                                    => '궁서',
+                                                'Arial, sans-serif'                                         => 'Arial',
+                                                'Verdana, sans-serif'                                       => 'Verdana',
+                                                'D2Coding, monospace'                                       => 'D2Coding',
+                                            ];
+                                            foreach ($fonts as $fv => $fl):
+                                            ?>
+                                            <option value="<?= htmlspecialchars($fv, ENT_QUOTES, 'UTF-8') ?>"
+                                                <?= $publish_font === $fv ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($fl, ENT_QUOTES, 'UTF-8') ?>
+                                            </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <p class="text--small mgT10">네이버 블로그 발행 시 본문에 적용되는 폰트입니다.</p>
+                                    </td>
                                 </tr>
                             </table>
 

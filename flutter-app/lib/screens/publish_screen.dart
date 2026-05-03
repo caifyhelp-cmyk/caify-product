@@ -59,11 +59,34 @@ class _PublishScreenState extends State<PublishScreen> {
     final hidden = prefs.getBool(_prefBannerKey) ?? false;
     if (hidden && mounted) setState(() => _showBanner = false);
 
-    _selectedAlign = prefs.getString(_prefAlignKey) ?? 'left';
-    _selectedFont  = prefs.getString(_prefFontKey)  ?? '';
-    _optionsReady  = true;
+    // 서버에서 저장된 설정 조회
+    final settings = await ApiService.fetchPublishSettings();
+    final bool isFirstTime = settings['align'] == null;
 
-    if (_ctrl != null) await _startNaverLoad(_ctrl!);
+    if (!isFirstTime) {
+      _selectedAlign = settings['align'] ?? 'left';
+      _selectedFont  = settings['font']  ?? '';
+      // 로컬 캐시 갱신
+      await prefs.setString(_prefAlignKey, _selectedAlign);
+      await prefs.setString(_prefFontKey,  _selectedFont);
+    } else {
+      // 오프라인 캐시 폴백
+      _selectedAlign = prefs.getString(_prefAlignKey) ?? 'left';
+      _selectedFont  = prefs.getString(_prefFontKey)  ?? '';
+    }
+
+    if (isFirstTime && mounted) {
+      // 최초 1회: 설정 시트 표시 후 WebView 로드
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _showPublishOptions();
+        if (!mounted) return;
+        setState(() => _optionsReady = true);
+        if (_ctrl != null) await _startNaverLoad(_ctrl!);
+      });
+    } else {
+      _optionsReady = true;
+      if (_ctrl != null) await _startNaverLoad(_ctrl!);
+    }
   }
 
   // ── 발행 옵션 바텀시트 ────────────────────────────────────
@@ -195,13 +218,14 @@ class _PublishScreenState extends State<PublishScreen> {
       ),
     );
 
-    // 바텀시트 닫힌 후 선택값 저장
+    // 바텀시트 닫힌 후 선택값 저장 (로컬 + 서버)
     _selectedAlign = tmpAlign;
     _selectedFont  = tmpFont;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefAlignKey, _selectedAlign);
     await prefs.setString(_prefFontKey, _selectedFont);
+    ApiService.savePublishSettings(align: _selectedAlign, font: _selectedFont);
 
     if (mounted) setState(() {});
   }

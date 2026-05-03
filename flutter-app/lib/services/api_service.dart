@@ -214,6 +214,45 @@ class ApiService {
     }
   }
 
+  // ── 발행 설정 (정렬·폰트) ────────────────────────────────────
+  /// null 반환 = 미설정(최초)
+  static Future<Map<String, String?>> fetchPublishSettings() async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return {'align': null, 'font': null};
+    try {
+      final res = await http.get(
+        Uri.parse('${cfg['apiBase']}/api/publish-settings'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        return {
+          'align': data['align'] as String?,
+          'font':  data['font']  as String?,
+        };
+      }
+    } catch (e) {
+      AppLogger.error('API', 'fetchPublishSettings ERR — $e');
+    }
+    return {'align': null, 'font': null};
+  }
+
+  static Future<bool> savePublishSettings({required String align, required String font}) async {
+    final cfg = await loadConfig();
+    if (cfg['apiBase']!.isEmpty) return false;
+    try {
+      final res = await http.post(
+        Uri.parse('${cfg['apiBase']}/api/publish-settings'),
+        headers: await _headers(),
+        body: jsonEncode({'align': align, 'font': font}),
+      ).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('API', 'savePublishSettings ERR — $e');
+      return false;
+    }
+  }
+
   // ── 발행 완료 통보 ───────────────────────────────────────────
   static Future<bool> markPublished(int postId) async {
     final cfg = await loadConfig();

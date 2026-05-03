@@ -19,6 +19,11 @@ ALTER TABLE caify_member
 -- api_token 유니크 인덱스 (중복 실행 안전)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_api_token ON caify_member (api_token);
 
+-- 발행 설정 (정렬·폰트) — NULL = 미설정(최초 발행 시 선택 유도)
+ALTER TABLE caify_member
+  ADD COLUMN IF NOT EXISTS publish_align VARCHAR(10)  DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS publish_font  VARCHAR(150) DEFAULT NULL;
+
 -- ── 2. ai_posts 컬럼 추가 ─────────────────────────────────────
 ALTER TABLE ai_posts
   ADD COLUMN IF NOT EXISTS tags JSON DEFAULT NULL;

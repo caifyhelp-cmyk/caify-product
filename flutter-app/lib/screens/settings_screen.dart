@@ -42,10 +42,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _memberIdCtrl.text = cfg['memberId'] ?? '';
     _tokenCtrl.text    = cfg['apiToken'] ?? '';
     _loadBlogId();
+    final settings = await ApiService.fetchPublishSettings();
     final prefs = await SharedPreferences.getInstance();
+    final align = settings['align'] ?? prefs.getString('publish_align') ?? 'left';
+    final font  = settings['font']  ?? prefs.getString('publish_font')  ?? '';
     if (mounted) setState(() {
-      _publishAlign = prefs.getString('publish_align') ?? 'left';
-      _publishFont  = prefs.getString('publish_font')  ?? '';
+      _publishAlign = align;
+      _publishFont  = font;
     });
   }
 
@@ -369,12 +372,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _publishAlign = align);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('publish_align', align);
+    ApiService.savePublishSettings(align: align, font: _publishFont);
   }
 
   Future<void> _savePublishFont(String font) async {
     setState(() => _publishFont = font);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('publish_font', font);
+    ApiService.savePublishSettings(align: _publishAlign, font: font);
   }
 
   Future<void> _openNaverLink() async {
