@@ -274,7 +274,7 @@ keyword 단위 캐시 유지 (키워드 지식은 업체 무관 공유 가능)
 
 ---
 
-## 현재 버전: v1.5.7
+## 현재 버전: v1.9.1+91
 
 ### 버전 히스토리 요약
 | 버전 | 주요 변경 |
@@ -497,6 +497,117 @@ cd mock-server && node server.js  # 포트 3030
 - **노드**: `Merge All1`
 - **원인**: `Merge All1`이 빈 파라미터(`{}` = Append 모드)여서 `Extract Image2`/`Extract Image3`에서 이미지가 하나씩 완성될 때마다 하류를 트리거 → 이미지 N개 시 `POST /api/posts`가 N번 실행 → 포스트 N개 중복 생성
 - **수정**: `Merge All1` 파라미터를 `{ mode: combine, combineBy: combineByPosition }` 으로 변경 → 양쪽 Extract 노드가 모두 완료된 후 한 번만 트리거, `Code in JavaScript2`의 `allNodeRuns`가 전체 이미지 수집 후 포스트 1개 생성
+
+---
+
+---
+
+## 네이버 발행 — 확장프로그램 없이 + 정렬·폰트 선택 (2026-05-03)
+
+### 배경
+기존 `output_view.php`의 "산출물 발행" 버튼은 `window.postMessage`로 Chrome 확장프로그램에 의존했음.  
+Flutter 앱은 이미 WebView + SE3 JS 주입으로 확장프로그램 없이 발행 가능한 상태였고,  
+실서버 웹도 동일하게 확장프로그램 없이 발행하도록 전환 + 정렬·폰트 선택 기능 추가.
+
+### 변경 파일 요약
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `php-server/output/output_publish_naver.php` | 신규 — 발행 도우미 페이지 |
+| `php-server/output/output_view.php` | 발행 버튼 → `output_publish_naver.php` 링크 |
+| `php-server/api/app_publish_settings.php` | 신규 — 앱용 발행 설정 GET/POST API |
+| `php-server/mycaify/profile_edit.php` | 발행 정렬·폰트 설정 변경 UI 추가 |
+| `php-server/sql/migrate_app_api.sql` | `publish_align`, `publish_font` 컬럼 추가 |
+| `flutter-app/lib/services/naver_publisher.dart` | `naverFonts`, `applyStyleToHtml()` 추가 |
+| `flutter-app/lib/screens/publish_screen.dart` | 발행 전 설정 로드, HTML 스타일 전처리 주입 |
+| `flutter-app/lib/screens/settings_screen.dart` | 발행 설정 섹션 추가 |
+| `flutter-app/lib/services/api_service.dart` | `fetchPublishSettings()`, `savePublishSettings()` 추가 |
+| `flutter-app/pubspec.yaml` | v1.9.0+90 → v1.9.1+91 |
+
+### 기능 설계
+
+#### 웹 발행 도우미 (`output_publish_naver.php`)
+1. 정렬·폰트 선택한 설정을 `<p>` 태그 인라인 스타일로 적용 (JS 클라이언트 사이드)
+2. Clipboard API로 스타일 적용된 HTML 복사 (`navigator.clipboard.write` → `execCommand` fallback)
+3. 네이버 글쓰기 팝업 열기
+4. 붙여넣기 안내 → 발행 완료 버튼 → AJAX `POST action=mark_done` → `ai_posts.posting_date = NOW()`
+
+#### 설정 저장 방식 (DB 기반)
+- `caify_member` 테이블에 `publish_align VARCHAR(10)`, `publish_font VARCHAR(150)` 추가
+- `DEFAULT NULL` — NULL이면 최초 방문 판정
+- **최초 방문**: 발행 도우미 열 때 설정 패널 표시 → 저장 후 발행 단계 표시
+- **재방문**: DB 저장값 자동 적용, 현재 설정 요약 바 + "설정 변경 →" (`profile_edit.php`) 링크
+- **설정 변경**: `profile_edit.php` 개인정보 수정 폼에 발행 정렬·폰트 드롭다운 추가
+
+#### Flutter 앱 설정 흐름
+- 발행 화면 진입 시 `ApiService.fetchPublishSettings()` 호출
+- `align == null` → 최초 → 바텀시트 1회 표시 → 확인 시 API + SharedPreferences 저장
+- 이후 자동 로드, 팝업 없음
+- AppBar `tune` 아이콘으로 언제든 변경 가능
+- 설정 화면(settings_screen.dart)에도 발행 설정 섹션 추가
+
+#### 앱 API (`/api/publish-settings`)
+```
+GET  → Bearer 인증 → SELECT publish_align, publish_font → { ok, align, font }
+POST → Bearer 인증 → UPDATE caify_member SET publish_align, publish_font
+```
+
+### DB 마이그레이션
+```sql
+-- MySQL 호환 (IF NOT EXISTS 는 MariaDB 전용 — MySQL 에서 실패함)
+ALTER TABLE caify_member ADD COLUMN publish_align VARCHAR(10)  DEFAULT NULL;
+ALTER TABLE caify_member ADD COLUMN publish_font  VARCHAR(150) DEFAULT NULL;
+```
+⚠️ `migrate_app_api.sql` 기존 구문 중 다른 `IF NOT EXISTS` 도 MySQL 실서버에선 실행 불가.  
+실서버가 MySQL인 경우 컬럼 존재 여부 확인 후 개별 ALTER 실행 필요.
+
+### 실서버 검증 결과 (2026-05-03)
+Python pymysql로 실서버 DB(`183.111.227.123 / ai_database`)에 직접 연결해 시뮬레이션 실행.
+
+| 항목 | 결과 |
+|------|------|
+| DB 연결 | OK |
+| `publish_align` / `publish_font` 컬럼 | **실서버에 직접 추가 완료** (마이그레이션 실행됨) |
+| GET `/api/publish-settings` 미설정 상태 | `{"ok":true,"align":null,"font":null}`, `is_first_time: True` |
+| POST `save_settings` (center / 나눔고딕) | 정상 저장, 재조회 시 `is_first_time: False` 확인 |
+| `ai_posts.posting_date` 컬럼 | 존재 확인 |
+| 포스트 접근 권한 쿼리 | 정상 |
+
+**미검증 항목** (PHP 런타임 / 브라우저 환경 필요):
+- PHP include 경로, session 변수 처리
+- 클립보드 복사 (`navigator.clipboard.write`) — HTTPS + 브라우저 권한 필요
+- `profile_edit.php` 폼 제출 → DB 저장 흐름
+- Flutter 앱 실기기 Bearer 토큰 인증 → API 응답
+
+### 발견·수정된 버그
+
+1. **`saveSettings(event.currentTarget)` → `saveSettings(this)` 전환**  
+   인라인 `onclick` 핸들러에서 `event.currentTarget`은 비표준 — 버튼 참조 불안정  
+   `onclick="saveSettings(this)"` + `function saveSettings(btn)` 으로 수정
+
+2. **최초 방문 시 태그 섹션 미노출**  
+   태그 안내가 `else` 브랜치(재방문)에만 있어서 최초 방문 시 설정 저장 후에도 태그 안 보임  
+   태그 섹션을 if/else 바깥(상단 공통)으로 이동
+
+3. **`ADD COLUMN IF NOT EXISTS` MySQL 미지원**  
+   Python 실서버 테스트에서 발견 — MariaDB 전용 문법  
+   `migrate_app_api.sql` 개별 `ALTER TABLE` 구문으로 수정, 실서버에 직접 실행 완료
+
+### 네이버 12개 폰트 목록 (앱·웹 동일)
+| CSS 값 | 표시명 |
+|--------|--------|
+| `''` (빈값) | 기본 |
+| `NanumGothic, '나눔고딕', sans-serif` | 나눔고딕 |
+| `NanumMyeongjo, '나눔명조', serif` | 나눔명조 |
+| `NanumBarunGothic, '나눔바른고딕', sans-serif` | 나눔바른고딕 |
+| `'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif` | 맑은고딕 |
+| `dotum, '돋움', sans-serif` | 돋움 |
+| `gulim, '굴림', sans-serif` | 굴림 |
+| `batang, '바탕', serif` | 바탕 |
+| `gungsuh, '궁서', serif` | 궁서 |
+| `Arial, sans-serif` | Arial |
+| `Verdana, sans-serif` | Verdana |
+| `D2Coding, monospace` | D2Coding |
 
 ---
 
