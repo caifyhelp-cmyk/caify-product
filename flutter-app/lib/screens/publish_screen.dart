@@ -61,10 +61,9 @@ class _PublishScreenState extends State<PublishScreen> {
 
     _selectedAlign = prefs.getString(_prefAlignKey) ?? 'left';
     _selectedFont  = prefs.getString(_prefFontKey)  ?? '';
+    _optionsReady  = true;
 
-    if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showPublishOptions());
-    }
+    if (_ctrl != null) await _startNaverLoad(_ctrl!);
   }
 
   // ── 발행 옵션 바텀시트 ────────────────────────────────────
@@ -196,7 +195,7 @@ class _PublishScreenState extends State<PublishScreen> {
       ),
     );
 
-    // 바텀시트 닫힌 후 선택값 저장 + WebView 로드 시작
+    // 바텀시트 닫힌 후 선택값 저장
     _selectedAlign = tmpAlign;
     _selectedFont  = tmpFont;
 
@@ -204,8 +203,7 @@ class _PublishScreenState extends State<PublishScreen> {
     await prefs.setString(_prefAlignKey, _selectedAlign);
     await prefs.setString(_prefFontKey, _selectedFont);
 
-    if (mounted) setState(() => _optionsReady = true);
-    if (_ctrl != null) await _startNaverLoad(_ctrl!);
+    if (mounted) setState(() {});
   }
 
   Future<void> _startNaverLoad(InAppWebViewController ctrl) async {
@@ -213,6 +211,20 @@ class _PublishScreenState extends State<PublishScreen> {
     await ctrl.loadUrl(urlRequest: URLRequest(
       url: WebUri('https://blog.naver.com/GoBlogWrite.naver'),
     ));
+  }
+
+  // ── 발행 설정 버튼 핸들러 ─────────────────────────────────
+  Future<void> _openSettings() async {
+    await _showPublishOptions();
+    if (!mounted) return;
+    if (_state == PublishState.editorReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('설정이 저장됐습니다. 다음 발행부터 적용됩니다.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   // ── 배너 닫기 ──────────────────────────────────────────────
@@ -300,25 +312,30 @@ class _PublishScreenState extends State<PublishScreen> {
               )
             : const SizedBox.shrink(),
         automaticallyImplyLeading: false,
-        actions: _state == PublishState.editorReady
-            ? [
-                ElevatedButton(
-                  onPressed: _doPublish,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF03C75A),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
-                  ),
-                  child: const Text('발행하기',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(width: 8),
-              ]
-            : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.tune, size: 20),
+            tooltip: '발행 설정',
+            onPressed: _openSettings,
+          ),
+          if (_state == PublishState.editorReady) ...[
+            ElevatedButton(
+              onPressed: _doPublish,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF03C75A),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6)),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 6),
+              ),
+              child: const Text('발행하기',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
       ),
       body: Stack(
         children: [

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/app_logger.dart';
+import '../services/naver_publisher.dart';
 import '../services/update_service.dart';
 import 'log_viewer_screen.dart';
 import 'naver_link_screen.dart';
@@ -22,6 +24,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _blogId;
   bool _blogIdLoading = false;
   String _appVersion  = '';
+  String _publishAlign = 'left';
+  String _publishFont  = '';
 
   @override
   void initState() {
@@ -38,6 +42,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _memberIdCtrl.text = cfg['memberId'] ?? '';
     _tokenCtrl.text    = cfg['apiToken'] ?? '';
     _loadBlogId();
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() {
+      _publishAlign = prefs.getString('publish_align') ?? 'left';
+      _publishFont  = prefs.getString('publish_font')  ?? '';
+    });
   }
 
   Future<void> _loadBlogId() async {
@@ -133,6 +142,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 20),
+
+            // ── 발행 설정 ───────────────────────────────────────────
+            _sectionTitle('발행 설정'),
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 정렬
+                    const Text('본문 정렬',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        for (final e in [('left', '☰ 왼쪽'), ('center', '≡ 가운데'), ('right', '☱ 오른쪽')])
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(right: e.$1 == 'right' ? 0 : 8),
+                              child: GestureDetector(
+                                onTap: () => _savePublishAlign(e.$1),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: _publishAlign == e.$1 ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                      width: 2,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                    color: _publishAlign == e.$1 ? const Color(0xFFEFF6FF) : Colors.white,
+                                  ),
+                                  child: Text(e.$2,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: _publishAlign == e.$1 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 폰트
+                    const Text('본문 폰트',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569))),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _publishFont,
+                          isExpanded: true,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          borderRadius: BorderRadius.circular(10),
+                          items: NaverPublisher.naverFonts.entries.map((e) =>
+                            DropdownMenuItem(
+                              value: e.key,
+                              child: Text(e.value,
+                                  style: const TextStyle(fontSize: 14, color: Color(0xFF334155))),
+                            ),
+                          ).toList(),
+                          onChanged: (v) => _savePublishFont(v ?? ''),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '설정은 즉시 저장되며, 다음 발행부터 자동으로 적용됩니다.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   ],
                 ),
@@ -266,6 +363,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _savePublishAlign(String align) async {
+    setState(() => _publishAlign = align);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('publish_align', align);
+  }
+
+  Future<void> _savePublishFont(String font) async {
+    setState(() => _publishFont = font);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('publish_font', font);
   }
 
   Future<void> _openNaverLink() async {
