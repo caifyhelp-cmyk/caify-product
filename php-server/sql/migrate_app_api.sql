@@ -20,9 +20,10 @@ ALTER TABLE caify_member
 CREATE UNIQUE INDEX IF NOT EXISTS idx_api_token ON caify_member (api_token);
 
 -- 발행 설정 (정렬·폰트) — NULL = 미설정(최초 발행 시 선택 유도)
-ALTER TABLE caify_member
-  ADD COLUMN IF NOT EXISTS publish_align VARCHAR(10)  DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS publish_font  VARCHAR(150) DEFAULT NULL;
+-- 주의: IF NOT EXISTS는 MariaDB 전용. MySQL은 아래처럼 컬럼 존재 확인 후 실행
+-- MySQL 8.0+ 환경에서는 그냥 실행해도 무방 (이미 있으면 에러 → 무시)
+ALTER TABLE caify_member ADD COLUMN publish_align VARCHAR(10)  DEFAULT NULL;
+ALTER TABLE caify_member ADD COLUMN publish_font  VARCHAR(150) DEFAULT NULL;
 
 -- ── 2. ai_posts 컬럼 추가 ─────────────────────────────────────
 ALTER TABLE ai_posts
