@@ -416,17 +416,31 @@ const RAW_HTML = <?= json_encode($html_raw, JSON_UNESCAPED_UNICODE | JSON_UNESCA
 const POST_TITLE = <?= json_encode($title, JSON_UNESCAPED_UNICODE) ?>;
 const POST_ID = <?= (int)$post_id ?>;
 
-let selectedAlign = 'left';
-let selectedFont  = '';
+const LS_ALIGN = 'caify_publish_align';
+const LS_FONT  = 'caify_publish_font';
+
+let selectedAlign = localStorage.getItem(LS_ALIGN) || 'left';
+let selectedFont  = localStorage.getItem(LS_FONT)  || '';
+
+// 페이지 로드 시 저장된 설정 복원
+(function restoreSettings() {
+    document.querySelectorAll('.align-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.align === selectedAlign);
+    });
+    const fontSel = document.getElementById('fontSelect');
+    if (fontSel) fontSel.value = selectedFont;
+})();
 
 function setAlign(align, btn) {
     selectedAlign = align;
+    localStorage.setItem(LS_ALIGN, align);
     document.querySelectorAll('.align-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 }
 
 function onFontChange(val) {
     selectedFont = val;
+    localStorage.setItem(LS_FONT, val);
 }
 
 // ── HTML에 정렬·폰트 적용 (클라이언트 사이드) ─────────────────
