@@ -147,7 +147,7 @@ return {json:{...ctx, rag_context:finalCtx, _fact_check_done:true,
 def make_code_node(name, nid, code, pos):
     return {'id': nid, 'name': name, 'type': 'n8n-nodes-base.code',
             'typeVersion': 2, 'position': pos,
-            'parameters': {'mode': 'runOnceForEachItem', 'jsCode': code}}
+            'parameters': {'mode': 'runOnceForAllItems', 'jsCode': code}}
 
 def make_http_pplx(name, nid, body_expr, pos):
     return {'id': nid, 'name': name, 'type': 'n8n-nodes-base.httpRequest',
