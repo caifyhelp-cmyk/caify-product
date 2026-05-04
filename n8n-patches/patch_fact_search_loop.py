@@ -110,7 +110,7 @@ const resp  = $input.first().json;
 const raw   = resp?.content?.[0]?.text || '';
 let parsed = {};
 try { const m=raw.match(/\{[\s\S]+\}/); if(m) parsed=JSON.parse(m[0]); } catch(e) {}
-const needs  = Array.isArray(parsed.needs_recheck) ? parsed.needs_recheck.filter(Boolean) : [];
+const needs  = Array.isArray(parsed.needs_recheck) ? parsed.needs_recheck.map(x=>typeof x==='string'?x:(x?.query||'')).filter(Boolean) : [];
 const cleanCtx = (parsed.clean_context || prev._combined_context || '').trim();
 return {json:{...prev,
   rag_context: cleanCtx,
@@ -120,7 +120,7 @@ return {json:{...prev,
   _verified_claims:   parsed.verified_claims||[]}};"""
 
 CODE_RECHECK_PREP = r"""const ctx  = $json;
-const q0   = (ctx._needs_recheck||[])[0] || '';
+const q0   = String((ctx._needs_recheck||[])[0]?.query || (ctx._needs_recheck||[])[0] || '');
 const brand= String((ctx.ctx||{}).brand_name || ctx._ckw_brand || '').trim();
 const fullQ= brand && !q0.includes(brand) ? brand+' '+q0 : q0;
 return {json:{...ctx,
