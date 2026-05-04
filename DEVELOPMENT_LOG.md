@@ -534,6 +534,73 @@ cd mock-server && node server.js  # 포트 3030
 
 ---
 
+### 2026-05-03~04: 팩트체크 — 3축 검색 + 클레임 검증 루프
+
+**워크플로우**: `키워드풀 반영2` (ID: `4ajVXNzlJ52jP02M`)  
+**패치 스크립트**: `n8n-patches/patch_fact_search_loop.py`
+
+#### 배경 / 문제
+고객 피드백: "과장이 심하고 정보가 안 맞다"  
+실제 사례 (한국인증센터):
+- 벤처인증 5분 내 절대 불가
+- ISO와 서류 성격 자체가 다름
+- KCC 문서자동화 시스템으로 벤처인증 서류 불가
+- 개별 인증 비용 각 3~5백만원 아님
+
+**근본 원인**: Perplexity가 B2B 전문 인증 프로세스에 대해 부정확한 일반 웹 정보 반환 → LLM이 출처 없는 클레임을 사실처럼 생성
+
+#### 해결 아키텍처
+
+**3축 Perplexity 검색** (기존 2축 → 3축)
+
+| 축 | 쿼리 | 목적 |
+|----|------|------|
+| ① 키워드 심층 조사 | `{keyword}` (기존 RAG) | 업종 일반 정보 |
+| ② 업체 조사 | `{brand_name}` (기존 _biz_research) | 업체 기본 정보 |
+| ③ 업체+키워드 (신규) | `"{brand}" {keyword} 서비스 특징 실제` | 업체 실제 서비스 범위 |
+- 로컬 업종 감지 시 ③을 `"{brand}" 후기 방문기 실제 경험`으로 전환
+
+**클레임 검증 루프 (Claude Haiku)**
+1. 3축 검색 결과 합산 후 클레임 추출: 금액·소요시간·성공률·타서비스비교·기술능력
+2. 검색 원문에 없는 클레임 → UNVERIFIED로 분류 → `clean_context`에서 제거
+3. 미검증 클레임 재검색 쿼리 생성 → IF 노드로 재검색 루프 (최대 1회)
+4. `최종 컨텍스트 정리` 노드가 `rag_context`를 검증된 내용만으로 교체 → `프롬프트생성1`로 전달
+
+**검증 방식 설계 원칙**: "사실 여부" 판단(부정확) 대신 "출처 존재 여부" 판단(정확) → LLM 신뢰도 높음
+
+#### 추가된 노드 (11개)
+```
+마케팅 프로파일 파싱
+  → 업체+키워드 준비 (Code)       ← 로컬/B2B 분기, 쿼리 생성
+  → 업체+키워드 Perplexity (HTTP) ← sonar 모델
+  → 업체+키워드 파싱 (Code)
+  → 클레임 검증 준비 (Code)       ← Claude Haiku 요청 구성
+  → 클레임 검증 API (HTTP)        ← claude-haiku-4-5-20251001
+  → 클레임 검증 파싱 (Code)       ← verified/unverified 분류, rag_context 교체
+  → 재검색 여부 (IF)              ← needs_recheck.length>0 && retry<1
+      TRUE → 재검색 준비 → 재검색 Perplexity → 재검색 파싱
+      FALSE → (스킵)
+  → 최종 컨텍스트 정리 (Code)
+  → 프롬프트생성1
+```
+
+#### 수정된 기존 노드
+- `프롬프트생성1`: `[업체+키워드 특화 조사]` 섹션 추가, "수치 많을수록 신뢰" 문장 제거
+
+#### 테스트 결과 (실행 152055, success)
+- 전체 11개 신규 노드 정상 실행
+- `_unverified_removed: 5` — 출처 없는 클레임 5개 제거
+- 재검색 루프 정상 발동 및 완료
+
+#### 트러블슈팅
+| 오류 | 원인 | 수정 |
+|------|------|------|
+| `Can't use .first()` | Code 노드 mode=`runOnceForEachItem`에서 `.first()` 불가 | `runOnceForAllItems`로 변경 |
+| `q0.includes is not a function` | Claude Haiku가 `needs_recheck`를 `{query,reason}` 객체로 반환 | `.map(x=>x?.query\|\|x)` 정규화 추가 |
+| n8n PUT 400 Bad Request | GET 응답의 `updatedAt`, `versionId` 등 extra 필드 포함 | PUT payload를 4개 키만으로 제한 |
+
+---
+
 ### 2026-04-30: 사례 포스트 중복 생성 버그 수정
 - **워크플로우**: `사례-홈페이지연동_0427` (ID: `yzOD6jJExSWlBi84`)
 - **노드**: `Merge All1`
